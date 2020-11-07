@@ -4,22 +4,8 @@ const Engel = (() =>
 	{
 		const result = {};
 		let i = 0;
-		for (const node of args) {
-			Object.defineProperty(result, node,
-				{
-					value: i,
-					writable: false,
-					configurable: false,
-					enumerable: true
-				});
-			Object.defineProperty(result, i,
-				{
-					value: node,
-					writable: false,
-					configurable: false,
-					enumerable: true
-				});
-			++i;
+		for (let i = 0; i < args.length; ++i) {
+			result[result[args[i]] = i] = args[i];
 		}
 		return result;
 	};
@@ -52,6 +38,7 @@ const Engel = (() =>
 			'TRUE',      'FALSE',      'AND',
 			'OR',        'EQUIV',      'ELSE',
 			'IF',        'SET',        'LBRACE',
+			'LBRACK',    'RBRACK',     'COMMA',
 			'RBRACE',    'LT',         'GT',
 			'LE',        'GE',         'NOT',
 			'NOT_EQUIV', 'NULL',       'FOR',
@@ -59,7 +46,7 @@ const Engel = (() =>
 			'THIS',      'CALL',       'MATCH',
 			'RETURN',    'LET',        'DEC',
 			'FUNC',      'HASH_START', 'OBJ_START',
-			'ERROR',     'FIN');
+			'FAT_ARROW', 'ERROR',     'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -375,15 +362,27 @@ const Engel = (() =>
 							{
 							   return Token(TokenType.EQUIV, this);
 							}
+							else if (this.match('>'))
+							{
+								return Token(TokenType.FAT_ARROW);
+							}
 							return Token(TokenType.SET, this);
 						case '#':
 							if (this.match('['))
 							{
-							   return Token(TokenType.NOT_EQUIV, this);
+							   return Token(TokenType.HASH_START, this);
 							}
-							return Token(TokenType.NOT, this);
+							else if (this.match('{'))
+							{
+								return Token(TokenType.OBJ_START, this);
+							}
+							return this.error('Unexpected hash (#)');
 						case '\'':
 							return this.singleString();
+						case '\n':
+							return Token(TokenType.ENDL, this);
+						case ',':
+							return Token(TokenType.COMMA, this);
 						case '{':
 							if (this.interps.length >= 0)
 							{
@@ -401,6 +400,14 @@ const Engel = (() =>
 							   }
 							}
 							return Token(TokenType.RBRACE, this);
+						case '(':
+							return Token(TokenType.LPAREN, this);
+						case ')':
+							return Token(TokenType.RPAREN, this);
+						case '[':
+						return Token(TokenType.LBRACK, this);
+						case ']':
+						return Token(TokenType.RBRACK, this);
 						default:
 						{
 							if (this.isDigit(char))
@@ -440,39 +447,104 @@ const Engel = (() =>
 			};
 			return () => Lexer.scan.call(Lexer);
 		};
+		
 		const NodeType = Enum(
-			'ADD',       'SUB',        'MUL',
-			'DIV',       'EXP',        'MOD',
-			'LS',        'RS',         'XOR',
-			'BAND',      'BOR',        'ADD_SET',
-			'SUB_SET',   'MUL_SET',    'DIV_SET',
-			'EXP_SET',   'MOD_SET',    'LS_SET',
-			'RS_SET',    'STRING',     'INTERP',
-			'REAL',      'INT',        'ID',
-			'ENDL',      'LPAREN',     'RPAREN',
-			'TRUE',      'FALSE',      'AND',
-			'OR',        'EQUIV',      'ELSE',
-			'IF',        'SET',        'LBRACE',
-			'RBRACE',    'LT',         'GT',
-			'LE',        'GE',         'NOT',
-			'NOT_EQUIV', 'NULL',       'FOR',
-			'WHILE',     'BREAK',      'CONTINUE',
-			'THIS',      'CALL',       'MATCH',
-			'RETURN',    'LET',        'DEC',
-			'FUNC',      'HASH',     'OBJ',
-			'ERROR',     'FIN');
+			'ADD',       'SUB',     'MUL',
+			'DIV',       'EXP',     'MOD',
+			'LS',        'RS',      'XOR',
+			'BAND',      'BOR',     'BNOT',
+			'NEG',       'ADD_SET', 'GROUP',
+			'SUB_SET',   'MUL_SET', 'DIV_SET',
+			'EXP_SET',   'MOD_SET', 'LS_SET',
+			'RS_SET',    'STRING',  'INTERP',
+			'REAL',      'INT',     'GET',
+			'ENDL',      'LPAREN',  'RPAREN',
+			'TRUE',      'FALSE',   'AND',
+			'OR',        'EQUIV',   'ELSE',
+			'IF',        'SET',     'LBRACE',
+			'RBRACE',    'LT',      'GT',
+			'LE',        'GE',      'NOT',
+			'NOT_EQUIV', 'NULL',    'FOR',
+			'WHILE',     'BREAK',   'CONTINUE',
+			'THIS',      'CALL',    'MATCH',
+			'RETURN',    'DECLARE', 'BLOCK',
+			'FUNC_BLOCK', 'FUNC',   'HASH',
+			'OBJ','FIN');
 		const Node = (() =>
 		{
-			const base = type => {
-				type
-			};
+			const base = (type, line = 0) => ({
+				type, line,
+			});
 			return {
-				Nilary: base,
-				Unary: (type, x) => ({
-					...base(type), x
+				Constant: (type, token) => ({
+					...base(type, token.line),
+					value: token.value,
 				}),
-				Biary: (type, left, right) => ({
-					...base(type), left, right,
+				Nilary: base,
+				Unary: (type, value, line) => ({
+					...base(type, line),
+					value
+				}),
+				Binary: (type, left, right, line) => ({
+					...base(type, line),
+					left, right,
+				}),
+				Trinary: (type, left, middle, right, line) => ({
+					...base(type, line),
+					
+				}),
+				Get: (token) => ({
+					...base(NodeType.GET, token.line),
+					name: token.value,
+				}),
+				IfElse: (type, condition, then, other, line) => ({
+					...base(NodeType.If, line),
+					condition, then, other,
+				}),
+				While: (type, condition, then, other, line) => ({
+					...base(NodeType.WHILE, line),
+					condition, then, other,
+				}),
+				Case: (checks = [], then) => ({
+					checks, then,
+				}),
+				Match: (comp, cases, other, line) => ({
+					...base(NodeType.MATCH), comp, cases, other,
+				}),
+				Interpolation: (token, value) => ({
+					chars: token.value,
+					line: token.line,
+					value,
+				}),
+				StringInterp: (interps, terminator) => ({
+					...base(NodeType.INTERP, terminator.line),
+					interps,
+					terminator: terminator.value,
+				}),
+				
+				Declarations: (index, isConst, line) => ({
+					...base(NodeType.DECLARE, line),
+					index, isConst,
+				}),
+				Assign: (left, right, line) => ({
+					...base(NodeType.SET, line),
+					left, right,
+				}),
+				Func: (args, name, body, line) => ({
+					...base(NodeType.FUNC, line),
+					args, name, body,
+				}),
+				FuncCall: (args, callee, line) => ({
+					...base(NodeType.CALL, line),
+					args, callee,
+				}),
+				Block: (nodes = [], line) => ({
+					...base(NodeType.BLOCK, line),
+					nodes,
+				}),
+				FuncBlock: (nodes, line) => ({
+				   ...base(NodeType.FUNC_BLOCK, line),
+				   nodes,
 				}),
 			}
 		})();
@@ -489,12 +561,305 @@ const Engel = (() =>
 					// Lexical errors will be handled here.
 					return this.curr;
 				},
-				parse()
+				error(token, message)
 				{
-					do
+					console.log('Error: ' + message);
+				},
+				sniff(type)
+				{
+					return type === this.curr.type;
+				},
+				eat(type, error)
+				{
+					if (this.sniff(type))
 					{
 						this.advance();
-					   console.log(this.curr.str());
+						return;
+					}
+					this.advance();
+					this.error(this.curr, error);
+				},
+				taste(type)
+				{
+					if (this.sniff(type))
+					{
+						this.advance();
+						return true;
+					}
+					return false;
+				},
+				skipBreaks()
+				{
+					while (this.taste(TokenType.ENDL));
+				},
+				funcBody()
+				{
+					const start = this.curr;
+					if (this.taste(TokenType.LBRACE))
+					{
+						nodes = [];
+						for (;;)
+						{
+							if (this.sniff(TokenType.FIN))
+							{
+								this.error('Unclosed function body.');
+								return null;
+							}
+							if (this.taste(TokenType.RBRACE))
+							{
+								break;
+							}
+							const stmt = this.declaration();
+							if (stmt !== null)
+							{
+								nodes.push(stmt);
+							}
+						}
+						return Node.FuncBlock(nodes, start.line)
+					}
+					else
+					{
+						const value = this.expression();
+						return Node.Unary(NodeType.RETURN, value, start.line)
+					}
+				},
+				finishCall(node)
+				{
+					if (this.taste(TokenType.LPAREN))
+					{
+						const start = this.prev;
+						const args  = [];
+						if (!this.taste(TokenType.RPAREN))
+						{
+							do
+							{
+								this.skipBreaks();
+								args.push(this.expression());
+								this.skipBreaks();
+							} while (this.taste(TokenType.COMMA));
+							this.eat(TokenType.RPAREN, 'Expected closing parenthenis to call.');
+						}
+						return Node.FuncCall(args, node, start.line);
+					}
+					return node;
+				},
+				callTo(node)
+				{
+					let result = node;
+					for (;;)
+					{
+						if (this.sniff(TokenType.LPAREN))
+						{
+							result = this.finishCall(result);
+						}
+						else if (this.taste(TokenType.LBRACK))
+						{
+							const subscript = this.expression();
+							this.eat(TokenType.RBRACK, 'Unclosed subscription.');
+							result = Node.Binary(NodeType.SUBSCRIPT, result, subscript, this.last.line);
+						}
+						else
+						{
+							break;
+						}
+					}
+					return result;
+				},
+				factor()
+				{
+					let result;
+					if (this.taste(TokenType.INT))
+					{
+						result = Node.Constant(NodeType.INT, this.prev);
+					}
+					else if (this.taste(TokenType.REAL))
+					{
+					   result = Node.Constant(NodeType.REAL, this.prev);
+					}
+					else if (this.taste(TokenType.STRING))
+					{
+					   result = Node.Constant(NodeType.STRING, this.prev);
+					}
+					else if (this.taste(TokenType.INTERP))
+					{
+						const interps = [];
+						do
+						{
+							const start = this.prev;
+							const value = this.expression();
+							const interp = Node.Interpolation(start, value);
+							interps.push(interp);
+						} while (this.taste(TokenType.INTERP));
+						this.eat(TokenType.STRING, 'Expected closing string.');
+					   result = Node.StringInterp(interps, this.prev);
+					}
+					else if (this.taste(TokenType.TRUE))
+					{
+					   result = Node.Nilary(NodeType.TRUE, this.prev.line);
+					}
+					else if (this.taste(TokenType.FALSE))
+					{
+					   result = Node.Nilary(NodeType.FALSE, this.prev.line);
+					}
+					else if (this.taste(TokenType.NULL))
+					{
+					   result = Node.Nilary(NodeType.NULL, this.prev.line);
+					}
+					else if (this.taste(TokenType.ID))
+					{
+					   result = Node.Get(this.prev);
+					}
+					else if (this.taste(TokenType.CALL))
+					{
+					   result = Node.Get(this.prev);
+					}
+					else if (this.taste(TokenType.THIS))
+					{
+					   result = Node.Get(this.prev);
+					}
+					else if (this.taste(TokenType.SUB))
+					{
+					   result = Node.Unary(NodeType.NEG, this.factor());
+					}
+					else if (this.taste(TokenType.XOR))
+					{
+					   result = Node.Unary(NodeType.BNOT, this.factor());
+					}
+					else if (this.taste(TokenType.NOT))
+					{
+					   result = Node.Unary(NodeType.NOT, this.factor());
+					}
+					else if (this.taste(TokenType.LPAREN))
+					{
+						let isFunc = false;
+						let args;
+						
+						this.skipBreaks();
+						let expr = null;
+						if (this.taste(TokenType.RPAREN))
+						{
+							isFunc = true;
+							args = [];
+						}
+						else
+						{
+							expr = this.expression();
+							this.skipBreaks();
+							if (this.taste(TokenType.COMMA))
+							{
+								args = [];
+								args.push(expr);
+								do
+								{
+									this.skipBreaks();
+									args.push(this.expression());
+									this.skipBreaks();
+								} while (this.taste(TokenType.COMMA));
+								isFunc = true;
+							}
+							this.eat(TokenType.RPAREN, 'Expected closing parenthensis.');
+						}
+						if (isFunc)
+						{
+							this.eat(TokenType.FUNC, 'Expected skinny arrow (->)');
+							this.skipBreaks();
+							const body = this.funcBody();
+							result = Node.Func(args, null, body, this.prev.line);
+						}
+						else if (this.taste(TokenType.FUNC))
+						{
+							isFunc = true;
+							args = [expr];
+							this.skipBreaks();
+							const body = this.funcBody();
+							
+							result = Node.Func(args, null, body, this.prev.line);
+						}
+						else
+						{
+							result = Node.Unary(NodeType.GROUP, expr, this.prev.line);
+						}
+					}
+					else if (this.taste(TokenType.LBRACK))
+					{
+						const elements = [];
+						this.skipGreaks();
+						if (this.taste(TokenType.RBRACK))
+						{
+							result = Node.Array(elements, this.prev.line);
+						}
+						else
+						{
+							do
+							{
+								elements.push(this.expression());
+								this.skipGreaks();
+							} while (this.taste(TokenType.COMMA));
+							
+							this.eat(TokenType.RBRACK, 'Expected closing bracket to array.');
+							result = Node.Array(elements, this.prev.line);
+						}
+					}
+					else if (this.taste(TokenType.MATCH))
+					{
+						const start = this.curr;
+						const comp = this.expression();
+						this.skipBreaks();
+						this.eat(TokenType.LBRACE, 'Expected opening brace ({).');
+						const cases = [];
+						for (;;)
+						{
+							skip_breaks();
+							if (taste(token_fin))
+							{
+								this.error(start, 'Unclosed match.');
+								break;
+							}
+							if (taste(token_rbrace))
+							{
+								break;
+							}
+							const checks = [];
+							do
+							{
+								this.skipBreaks();
+								const expr = this.expression();
+								checks.push(expr);
+								this.skipBreaks();
+							} while (this.taste(TokenType.COMMA));
+							this.eat(TokenType.FAT_ARROW, 'Expected fat arrow (=>).');
+							this.skipBreaks();
+							const then = this.expression();
+							const curr = Node.Case(checks, then);
+							cases.push(curr);
+						}
+						let other = null;
+						skip_breaks();
+						if (this.taste(TokenType.ELSE))
+						{
+							this.skipBreaks();
+							other = this.expression();
+						}
+						result = Node.Match(comp, cases, other, start.line);
+					}
+					else
+					{
+						this.error(this.curr, 'Invalid expression.');
+						this.advance();
+						return null;
+					}
+					return this.callTo(result);
+				},
+				expression()
+				{
+					return this.factor();
+				},
+				parse()
+				{
+					this.advance();
+					do
+					{
+					   console.log(JSON.stringify(this.expression()));
 					} while (this.curr.type !== TokenType.FIN);
 				}
 			};
@@ -510,5 +875,5 @@ const Engel = (() =>
 	}
 })();
 
-const source = "let foo = 20";
+const source = "((x) -> '$#{x}')(10)";
 Engel.compile(source);
