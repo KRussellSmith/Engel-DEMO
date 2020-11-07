@@ -57,7 +57,7 @@ const compile = (() =>
 		'THIS',      'CALL',       'MATCH',
 		'RETURN',    'LET',        'DEC',
 		'FUNC',      'HASH_START', 'OBJ_START',
-		'FIN');
+		'ERROR',     'FIN');
 	const lexer = source =>
 	{
 		const keywords = {
@@ -152,9 +152,12 @@ const compile = (() =>
 			{
 				return this.isAlpha(x) || this.isDigit(x);
 			},
+			error(message)
+			{
+				return Token(TokenType.ERROR, this, message);
+			},
 			singleString()
 			{
-				//alert('Foo!');
 				let string = '';
 				let done = false;
 				let type = TokenType.STRING;
@@ -162,8 +165,7 @@ const compile = (() =>
 				{
 					if (this.fin())
 					{
-						alert('Unterminated string!');
-						return null;
+						return this.error('Unterminated string!');
 					}
 					const curr = this.advance();
 					//alert(curr)
@@ -216,7 +218,7 @@ const compile = (() =>
 								this.advance();
 								break;
 							}
-							// String interpolations:
+							// Interpolation:
 							case '#':
 							{
 								if (this.match('{'))
@@ -239,9 +241,6 @@ const compile = (() =>
 							}
 						}
 				} while (!done);
-				//alert(this.start);
-				//alert(this.curr);
-				//alert(type);
 				return Token(type, this, string);
 			},
 			scan()
@@ -251,7 +250,7 @@ const compile = (() =>
 				{
 					if (this.interps.length > 0)
 					{
-						return this.error('Un');
+						return this.error('Unclosed interpolation!');
 					}
 					return Token(TokenType.FIN, this);
 				}
@@ -422,7 +421,7 @@ const compile = (() =>
 							}
 							return Token(TokenType.ID, this);
 						}
-						return null;
+						return this.error(`Unrecognized character: '${char}'`);
 					}
 				}
 			},
