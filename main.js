@@ -28,7 +28,7 @@ const Engel = (() =>
 		const TokenType = Enum(
 			'ADD',       'SUB',        'MUL',
 			'DIV',       'EXP',        'MOD',
-			'LS',        'RS',         'XOR',
+			'LS',        'RS',         'SQUIGGLY',
 			'BAND',      'BOR',        'ADD_SET',
 			'SUB_SET',   'MUL_SET',    'DIV_SET',
 			'EXP_SET',   'MOD_SET',    'LS_SET',
@@ -300,9 +300,9 @@ const Engel = (() =>
 						case '~':
 							if (this.match('='))
 							{
-								return Token(TokenType.XOR_SET, this);
+								return Token(TokenType.SQUIGGLY_SET, this);
 							}
-							return Token(TokenType.XOR, this);
+							return Token(TokenType.SQUIGGLY, this);
 						case '&':
 							if (this.match('&'))
 							{
@@ -364,7 +364,7 @@ const Engel = (() =>
 							}
 							else if (this.match('>'))
 							{
-								return Token(TokenType.FAT_ARROW);
+								return Token(TokenType.FAT_ARROW, this);
 							}
 							return Token(TokenType.SET, this);
 						case '#':
@@ -380,6 +380,7 @@ const Engel = (() =>
 						case '\'':
 							return this.singleString();
 						case '\n':
+							this.newLine();
 							return Token(TokenType.ENDL, this);
 						case ',':
 							return Token(TokenType.COMMA, this);
@@ -449,27 +450,28 @@ const Engel = (() =>
 		};
 		
 		const NodeType = Enum(
-			'ADD',       'SUB',     'MUL',
-			'DIV',       'EXP',     'MOD',
-			'LS',        'RS',      'XOR',
-			'BAND',      'BOR',     'BNOT',
-			'NEG',       'ADD_SET', 'GROUP',
-			'SUB_SET',   'MUL_SET', 'DIV_SET',
-			'EXP_SET',   'MOD_SET', 'LS_SET',
-			'RS_SET',    'STRING',  'INTERP',
-			'REAL',      'INT',     'GET',
-			'ENDL',      'LPAREN',  'RPAREN',
-			'TRUE',      'FALSE',   'AND',
-			'OR',        'EQUIV',   'ELSE',
-			'IF',        'SET',     'LBRACE',
-			'RBRACE',    'LT',      'GT',
-			'LE',        'GE',      'NOT',
-			'NOT_EQUIV', 'NULL',    'FOR',
-			'WHILE',     'BREAK',   'CONTINUE',
-			'THIS',      'CALL',    'MATCH',
-			'RETURN',    'DECLARE', 'BLOCK',
+			'ADD',        'SUB',     'MUL',
+			'DIV',        'EXP',     'MOD',
+			'LS',         'RS',      'XOR',
+			'BAND',       'BOR',     'BNOT',
+			'NEG',        'ADD_SET', 'GROUP',
+			'SUB_SET',    'MUL_SET', 'DIV_SET',
+			'EXP_SET',    'MOD_SET', 'LS_SET',
+			'RS_SET',     'STRING',  'INTERP',
+			'REAL',       'INT',     'GET',
+			'ENDL',       'LPAREN',  'RPAREN',
+			'TRUE',       'FALSE',   'AND',
+			'OR',         'EQUIV',   'ELSE',
+			'IF',         'SET',     'LBRACE',
+			'RBRACE',     'LT',      'GT',
+			'LE',         'GE',      'NOT',
+			'NOT_EQUIV',  'NULL',    'FOR',
+			'WHILE',      'BREAK',   'CONTINUE',
+			'THIS',       'CALL',    'MATCH',
+			'RETURN',     'DECLARE', 'BLOCK',
 			'FUNC_BLOCK', 'FUNC',   'HASH',
-			'OBJ','FIN');
+			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
+			'OBJ',        'FIN');
 		const Node = (() =>
 		{
 			const base = (type, line = 0) => ({
@@ -497,11 +499,11 @@ const Engel = (() =>
 					...base(NodeType.GET, token.line),
 					name: token.value,
 				}),
-				IfElse: (type, condition, then, other, line) => ({
-					...base(NodeType.If, line),
+				IfElse: (condition, then, other, line) => ({
+					...base(NodeType.IF, line),
 					condition, then, other,
 				}),
-				While: (type, condition, then, other, line) => ({
+				While: (condition, then, other, line) => ({
 					...base(NodeType.WHILE, line),
 					condition, then, other,
 				}),
@@ -563,7 +565,7 @@ const Engel = (() =>
 				},
 				error(token, message)
 				{
-					console.log('Error: ' + message);
+					console.log(`[${token.line}:${token.collumn}] ${message}`);
 				},
 				sniff(type)
 				{
@@ -721,7 +723,7 @@ const Engel = (() =>
 					{
 					   result = Node.Unary(NodeType.NEG, this.factor());
 					}
-					else if (this.taste(TokenType.XOR))
+					else if (this.taste(TokenType.SQUIGGLY))
 					{
 					   result = Node.Unary(NodeType.BNOT, this.factor());
 					}
@@ -783,7 +785,7 @@ const Engel = (() =>
 					else if (this.taste(TokenType.LBRACK))
 					{
 						const elements = [];
-						this.skipGreaks();
+						this.skipBreaks();
 						if (this.taste(TokenType.RBRACK))
 						{
 							result = Node.Array(elements, this.prev.line);
@@ -792,8 +794,9 @@ const Engel = (() =>
 						{
 							do
 							{
+								this.skipBreaks();
 								elements.push(this.expression());
-								this.skipGreaks();
+								this.skipBreaks();
 							} while (this.taste(TokenType.COMMA));
 							
 							this.eat(TokenType.RBRACK, 'Expected closing bracket to array.');
@@ -803,19 +806,20 @@ const Engel = (() =>
 					else if (this.taste(TokenType.MATCH))
 					{
 						const start = this.curr;
+						this.skipBreaks();
 						const comp = this.expression();
 						this.skipBreaks();
 						this.eat(TokenType.LBRACE, 'Expected opening brace ({).');
 						const cases = [];
 						for (;;)
 						{
-							skip_breaks();
-							if (taste(token_fin))
+							this.skipBreaks();
+							if (this.taste(TokenType.FIN))
 							{
 								this.error(start, 'Unclosed match.');
 								break;
 							}
-							if (taste(token_rbrace))
+							if (this.taste(TokenType.RBRACE))
 							{
 								break;
 							}
@@ -834,7 +838,7 @@ const Engel = (() =>
 							cases.push(curr);
 						}
 						let other = null;
-						skip_breaks();
+						this.skipBreaks();
 						if (this.taste(TokenType.ELSE))
 						{
 							this.skipBreaks();
@@ -850,16 +854,260 @@ const Engel = (() =>
 					}
 					return this.callTo(result);
 				},
+				exponentation()
+				{
+					let result = this.factor();
+					if (
+						this.taste(TokenType.EXP))
+					{
+						this.skipBreaks();
+						const right = this.exponentation();
+						result = Node.Binary(NodeType.EXP, result, right);
+					}
+					return result;
+				},
+				multiplication()
+				{
+					let result = this.exponentation();
+					while (
+						this.taste(TokenType.MUL) ||
+						this.taste(TokenType.MOD) ||
+						this.taste(TokenType.DIV))
+					{
+						const start = this.prev;
+						this.skipBreaks();
+						const right = this.exponentation();
+						let type = null;
+						switch (start.type)
+						{
+							case TokenType.MUL:
+								type = NodeType.MUL;
+								break;
+							case TokenType.MOD:
+								type = NodeType.MOD;
+								break;
+							case TokenType.DIV:
+								type = NodeType.DIV;
+								break;
+						}
+						result = Node.Binary(type, result, right);
+					}
+					return result;
+				},
+				addition()
+				{
+					let result = this.multiplication();
+					while (
+						this.taste(TokenType.ADD) ||
+						this.taste(TokenType.SUB))
+					{
+						const start = this.prev;
+						this.skipBreaks();
+						const right = this.exponentation();
+						let type = null;
+						switch (start.type)
+						{
+							case TokenType.ADD:
+								type = NodeType.SUB;
+								break;
+							case TokenType.SUB:
+								type = NodeType.SUB;
+								break;
+						}
+						result = Node.Binary(type, result, right);
+					}
+					return result;
+				},
+				shift()
+				{
+					let result = this.addition();
+					while (
+						this.taste(TokenType.LS) ||
+						this.taste(TokenType.RS))
+					{
+						const token = this.prev;
+						this.skipBreaks();
+						const right = this.addition();
+						let type = null;
+						switch (token.type)
+						{
+							case TokenType.LS:
+								type = NodeType.LS;
+								break;
+							case TokenType.RS:
+								type = nodeType.RS;
+								break;
+						}
+						result = Node.Binary(type, result, right);
+					}
+					return result;
+				},
+				band()
+				{
+					let result = this.shift();
+					while (
+						this.taste(TokenType.BAND))
+					{
+						this.skipBreaks();
+						const right = this.shift();
+						result = Node.Binary(NodeType.BAND, result, right);
+					}
+					return result;
+				},
+				xor()
+				{
+					let result = this.band();
+					while (
+						this.taste(TokenType.SQUIGGLY))
+					{
+						this.skipBreaks();
+						const right = this.band();
+						result = Node.Binary(NodeType.XOR, result, right);
+					}
+					return result;
+				},
+				bor()
+				{
+					let result = this.xor();
+					while (
+						this.taste(TokenType.BOR))
+					{
+						this.skipBreaks();
+						const right = this.xor();
+						result = Node.Binary(type, result, right);
+					}
+					return result;
+				},
+				comparision()
+				{
+					let result = this.bor();
+					while (
+						this.taste(TokenType.LT) ||
+						this.taste(TokenType.GT) ||
+						this.taste(TokenType.LE) ||
+						this.taste(TokenType.GE))
+					{
+						const token = this.prev;
+						this.skipBreaks();
+						const right = this.bor();
+						let type;
+						switch (token.type)
+						{
+							case TokenType.LT:
+								type = NodeType.LT;
+								break;
+							case TokenType.GT:
+								type = nodeType.GT;
+								break;
+							case TokenType.LE:
+								type = NodeType.LE;
+								break;
+							case TokenType.GE:
+								type = nodeType.GE;
+								break;
+						}
+						result = Node.Binary(type, result, right);
+					}
+				   return result;
+				},
+				equality()
+				{
+					let result = this.comparision();
+					while (
+					this.taste(TokenType.EQUIV) ||
+					this.taste(TokenType.NOT_EQUIV))
+					{
+						const token = this.prev;
+						this.skipBreaks();
+						const right = this.comparision();
+						let type = null;
+						switch (token.type)
+						{
+							case TokenType.EQUIV:
+								type = NodeType.EQUIV;
+								break;
+							case TokenType.NOT_EQUIV:
+								type = nodeType.NOT_EQUIV;
+								break;
+						}
+						result = Node.Binary(type, result, right);
+					}
+					return result;
+				},
+				and()
+				{
+					let result = this.equality();
+					while (this.taste(TokenType.AND))
+					{
+						this.skipBreaks();
+						result = Node.Binary(NodeType.AND, result, this.equality());
+					}
+					return result;
+				},
+				or()
+				{
+					let result = this.and();
+					while (this.taste(TokenType.OR))
+					{
+						this.skipBreaks();
+						result = Node.Binary(NodeType.OR, result, this.and())
+					}
+					return result;
+				},
+				ifelse()
+				{
+					const result = this.or();
+					if (this.taste(TokenType.IF))
+					{
+						this.skipBreaks();
+						const condition = this.ifelse();
+						this.skipBreaks();
+						this.eat(TokenType.ELSE, 'Expected else clause.');
+						this.skipBreaks();
+						const other = this.ifelse();
+						return Node.IfElse(condition, result, other);
+					}
+					return result;
+				},
+				assignment()
+				{
+					const result = this.ifelse();
+					if (this.taste(TokenType.SET))
+					{
+						if (result.type === NodeType.SUBSCRIPT)
+						{
+							result.type = NodeType.PASS;
+							const right = this.assignment();
+							return Node.Binary(NodeType.SET_SUBSCRIPT, result, right, this.prev.line);
+						}
+						else if (result.type !== NodeType.GET)
+						{
+							this.error(this.prev, 'Invalid target for assignment.');
+						}
+						const right = this.assignment();
+						return Node.Binary(NodeType.ASSIGN, result, right, this.prev.line);
+					}
+					return result;
+				},
 				expression()
 				{
-					return this.factor();
+					return this.assignment();
+				},
+				statement()
+				{
+					return this.expression();
+				},
+				declaration()
+				{
+					return this.statement();
 				},
 				parse()
 				{
 					this.advance();
+					this.skipBreaks();
 					do
 					{
-					   console.log(JSON.stringify(this.expression()));
+						console.log(JSON.stringify(this.expression()));
 					} while (this.curr.type !== TokenType.FIN);
 				}
 			};
@@ -875,5 +1123,11 @@ const Engel = (() =>
 	}
 })();
 
-const source = "((x) -> '$#{x}')(10)";
+const source = `
+	match x
+	{
+		10 => 20
+		5 => 6
+	}
+	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;
 Engel.compile(source);
