@@ -11,7 +11,7 @@ const Engel = (() =>
 	};
 	const op = Enum(
 		'ADD', 'SUB', 'MUL',
-		'INC', 'DEC',
+		'INC', 'DEC', 'CONST',
 		'DIV', 'EXP', 'LOAD',
 		'FIN', 'NEG', 'NOT',
 		'JMP', 'AND', 'OR',
@@ -23,6 +23,14 @@ const Engel = (() =>
 		'STORE_LOCAL', 'GET_LOCAL',
 		'SET', 'ERUPT', 'MOD');
 	
+	const ValueType = Enum(
+		'INT',  'REAL',  'STRING',
+		'FUNC', 'NULL',  'BOOL',
+		'HASH', 'ARRAY', 'OBJ');
+	const Value = (type, value) => ({
+		type,
+		value,
+	});
 	const compile = (() =>
 	{
 		const TokenType = Enum(
@@ -46,7 +54,7 @@ const Engel = (() =>
 			'THIS',      'CALL',       'MATCH',
 			'RETURN',    'LET',        'DEC',
 			'FUNC',      'HASH_START', 'OBJ_START',
-			'FAT_ARROW', 'ERROR',     'FIN');
+			'FAT_ARROW', 'ERROR',      'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -450,26 +458,26 @@ const Engel = (() =>
 		};
 		
 		const NodeType = Enum(
-			'ADD',        'SUB',     'MUL',
-			'DIV',        'EXP',     'MOD',
-			'LS',         'RS',      'XOR',
-			'BAND',       'BOR',     'BNOT',
-			'NEG',        'ADD_SET', 'GROUP',
-			'SUB_SET',    'MUL_SET', 'DIV_SET',
-			'EXP_SET',    'MOD_SET', 'LS_SET',
-			'RS_SET',     'STRING',  'INTERP',
-			'REAL',       'INT',     'GET',
-			'ENDL',       'LPAREN',  'RPAREN',
-			'TRUE',       'FALSE',   'AND',
-			'OR',         'EQUIV',   'ELSE',
-			'IF',         'SET',     'LBRACE',
-			'RBRACE',     'LT',      'GT',
-			'LE',         'GE',      'NOT',
-			'NOT_EQUIV',  'NULL',    'FOR',
-			'WHILE',      'BREAK',   'CONTINUE',
-			'THIS',       'CALL',    'MATCH',
-			'RETURN',     'DECLARE', 'BLOCK',
-			'FUNC_BLOCK', 'FUNC',   'HASH',
+			'ADD',        'SUB',           'MUL',
+			'DIV',        'EXP',           'MOD',
+			'LS',         'RS',            'XOR',
+			'BAND',       'BOR',           'BNOT',
+			'NEG',        'ADD_SET',       'GROUP',
+			'SUB_SET',    'MUL_SET',       'DIV_SET',
+			'EXP_SET',    'MOD_SET',       'LS_SET',
+			'RS_SET',     'STRING',        'INTERP',
+			'REAL',       'INT',           'GET',
+			'ENDL',       'LPAREN',        'RPAREN',
+			'TRUE',       'FALSE',         'AND',
+			'OR',         'EQUIV',         'ELSE',
+			'IF',         'SET',           'LBRACE',
+			'RBRACE',     'LT',            'GT',
+			'LE',         'GE',            'NOT',
+			'NOT_EQUIV',  'NULL',          'FOR',
+			'WHILE',      'BREAK',         'CONTINUE',
+			'THIS',       'CALL',          'MATCH',
+			'RETURN',     'DECLARE',       'BLOCK',
+			'FUNC_BLOCK', 'FUNC',          'HASH',
 			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
 			'OBJ',        'FIN');
 		const Node = (() =>
@@ -903,12 +911,12 @@ const Engel = (() =>
 					{
 						const start = this.prev;
 						this.skipBreaks();
-						const right = this.exponentation();
+						const right = this.multiplication();
 						let type = null;
 						switch (start.type)
 						{
 							case TokenType.ADD:
-								type = NodeType.SUB;
+								type = NodeType.ADD;
 								break;
 							case TokenType.SUB:
 								type = NodeType.SUB;
@@ -990,7 +998,7 @@ const Engel = (() =>
 						const token = this.prev;
 						this.skipBreaks();
 						const right = this.bor();
-						let type;
+						let type = null;
 						switch (token.type)
 						{
 							case TokenType.LT:
@@ -1095,6 +1103,10 @@ const Engel = (() =>
 				},
 				statement()
 				{
+					if (this.taste(TokenType.ENDL))
+					{
+						return null;
+					}
 					return this.expression();
 				},
 				declaration()
@@ -1103,18 +1115,113 @@ const Engel = (() =>
 				},
 				parse()
 				{
-					this.advance();
-					this.skipBreaks();
-					do
+					let stmt = null;
+					for (;;)
 					{
-						console.log(JSON.stringify(this.expression()));
-					} while (this.curr.type !== TokenType.FIN);
+						if (this.curr.type === TokenType.FIN)
+						{
+							return Node.Nilary(NodeType.FIN);
+						}
+						stmt = this.declaration();
+						if (stmt !== null)
+						{
+							return stmt;
+						}
+					}
 				}
 			};
-			return () => Parser.parse.call(Parser);
+			return () => {
+				Parser.advance();
+				return () => Parser.parse.call(Parser);
+			};
 		};
 		
-		return () => parser(lexer(source))();
+		const compiler = (parser) =>
+		{
+			const Chunk = () => ({
+				bytes:  [],
+				consts: [],
+			})
+			const Compiler = {
+				chunk: null,
+				addConst(value)
+				{
+					this.chunk.consts.push(value);
+					return this.uLEB(this.chunk.consts.length - 1);
+				},
+				emit(...ops)
+				{
+					this.chunk.bytes.push(...ops);
+				},
+				uLEB(x)
+				{
+					const result = [];
+					do
+					{
+						let byte = x & 0x7F;
+						x >>= 7;
+						if (x != 0)
+						{
+							byte |= 0x80;
+						}
+						result.push(byte);
+					} while (x != 0);
+					return result;
+				},
+				visit(node)
+				{
+					switch (node.type)
+					{
+						case NodeType.INT:
+						{
+							this.emit(op.CONST);
+							const value = Value(ValueType.INT, parseInt(node.value));
+							this.emit(...this.addConst(value));
+							break;
+						}
+						case NodeType.ADD:
+							this.visit(node.left);
+							this.visit(node.right);
+							this.emit(op.ADD);
+							break;
+						case NodeType.SUB:
+							this.visit(node.left);
+							this.visit(node.right);
+							this.emit(op.SUB);
+							break;
+						case NodeType.MUL:
+							this.visit(node.left);
+							this.visit(node.right);
+							this.emit(op.MUL);
+							break;
+						case NodeType.DIV:
+							this.visit(node.left);
+							this.visit(node.right);
+							this.emit(op.DIV);
+							break;
+					}
+				},
+				compile()
+				{
+					const parse = parser();
+					this.chunk = Chunk();
+					for (;;)
+					{
+						const node = parse();
+						console.log(JSON.stringify(node));
+						if (node.type === NodeType.FIN)
+						{
+							break;
+						}
+						this.visit(node);
+					}
+					return this.chunk;
+				},
+			};
+			return () => Compiler.compile.call(Compiler);
+		};
+		
+		return source => compiler(parser(lexer(source)))();
 	})();
 	const interpret = bytes =>
 	{};
@@ -1123,11 +1230,11 @@ const Engel = (() =>
 	}
 })();
 
-const source = `
+/*const source = `
 	match x
 	{
 		10 => 20
 		5 => 6
 	}
-	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;
-Engel.compile(source);
+	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
+console.log(JSON.stringify(Engel.compile('30 + 5')));
