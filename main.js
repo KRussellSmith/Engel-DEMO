@@ -533,10 +533,13 @@ const Engel = (() =>
 					interps,
 					terminator: terminator.value,
 				}),
-				
-				Declarations: (index, isConst, line) => ({
+				Declare: (name, value) => ({
+					name, value,
+				}),
+				Declarations: (isConst, line) => ({
 					...base(NodeType.DECLARE, line),
-					index, isConst,
+					isConst,
+					list: [],
 				}),
 				Assign: (left, right, line) => ({
 					...base(NodeType.SET, line),
@@ -1125,6 +1128,7 @@ const Engel = (() =>
 							nodes.push(stmt);
 						}
 					}
+					alert('done!');
 					return Node.Block(nodes, this.prev.line);
 				},
 				statement()
@@ -1225,6 +1229,43 @@ const Engel = (() =>
 				},
 				declaration()
 				{
+					if (this.taste(TokenType.LET))
+					{
+						const result = Node.Declarations(false, this.prev.line);
+						do
+						{
+							this.skipBreaks();
+							this.eat(TokenType.ID, 'Expected identifier.');
+							const name = this.prev.value;
+							this.skipBreaks();
+							let value = null;
+							if (this.taste(TokenType.SET))
+							{
+								this.skipBreaks();
+								value = this.expression();
+							}
+							const declare = Node.Declare(name, value);
+							result.list.push(declare);
+						} while (this.taste(TokenType.COMMA));
+						return result;
+					}
+					else if (this.taste(TokenType.DEC))
+					{
+						const result = Node.Declarations(false, parser.last.line);
+						do
+						{
+							this.skipBreaks();
+							this.eat(TokenType.ID, 'Expected identifier.');
+							const name = this.prev.value;
+							this.skipBreaks();
+							this.eat(TokenType.SET, 'Uninitialized constant.');
+							this.skipBreaks();
+							const value = this.expression();
+							const declare = Node.Declare(name, value);
+							result.list.push(declare);
+						} while (this.taste(TokenType.COMMA));
+						return result;
+					}
 					return this.statement();
 				},
 				parse()
@@ -1258,15 +1299,33 @@ const Engel = (() =>
 		});
 		const compiler = (parser) =>
 		{
+			const Local = (name, isConst) => ({
+				name,
+				depth: -1,
+				isConst,
+			});
+			const Upvalue = (index = 0, isLocal = true) => ({
+				index, isLocal,
+			})
 			const CompilerScope = daddy =>
 			({
-				func:   Func(),
-				locals: [],
-				depth:  0,
+				func:     Func(),
+				locals:   [],
+				depth:    0,
+				upvalues: [],
+				error: null,
 				daddy,
 			});
 			const Compiler = {
 				curr: null,
+				get chunck()
+				{
+					return this.curr.func.chunk;
+				},
+				error(message = '')
+				{
+					console.log(message);
+				},
 				addConst(value)
 				{
 					this.curr.func.chunk.consts.push(value);
@@ -1319,17 +1378,104 @@ const Engel = (() =>
 						this.curr.locals[this.curr.locals.length - 1].depth > this.curr.depth)
 					{
 						this.emit(op.POP);
+						this.curr.locals.pop();
 					}
-					this.curr.locals.pop();
 				},
 				endCompilerScope()
 				{
 					this.emit(op.NULL, op.RETURN);
 					const { func } = this.curr;
 					if (this.curr.daddy !== null)
-					{}
+					{
+						this.curr.daddy.error = this.curr.error;
+					}
 					this.curr = this.curr.daddy;
 					return func;
+				},
+				emitClosure(x)
+				{
+					this.emit(op.CLOSURE);
+					this.emitConst(x, ValueType.FUNC);
+				},
+				addLocal(name, isConst)
+				{
+					const local = Local(name, isConst);
+					this.curr.locals.push(local);
+					return local;
+				},
+				findLocal(name)
+				{
+					for (let i = this.curr.locals.length - 1; i >= 0; --i)
+					{
+						if (this.curr.locals[i].name === name)
+						{
+							return i;
+						}
+					}
+					return -1;
+				},
+				addUpvalue(index, isLocal)
+				{
+					const count = this.curr.upvalues.length;
+					for (let i = 0; i < count; ++i)
+					{
+						const upvalue = this.curr.upvalues[i];
+						if (upvalue.index === index && upvalue.isLocal === isLocal)
+						{
+							return i;
+						}
+					}
+					this.curr.upvalues.push(Upvalue(index, isConst));
+					return count;
+				},
+				findUpvalue(name, scode)
+				{
+					if (scope.daddy === null)
+					{
+						return -1;
+					}
+					const local = this.findLocal(name, scope.daddy);
+					if (local !== -1)
+					{
+						scope.daddy.locals[local].captured = true;
+						return this.addUpvalue(local, true);
+					}
+					const upvalue = this.findUpvalue(name, scope.daddy);
+					if (upvalue !== -1)
+					{
+						return this.addUpvalue(upvalue, false);
+					}
+					return -1;
+				},
+				uInt(x)
+				{
+					return [
+						(x >> 24) & 0xFF,
+						(x >> 16) & 0xFF,
+						(x >> 8)  & 0xFF,
+						(x)       & 0xFF,
+					];
+				},
+				saveSpot()
+				{
+					return this.chunk.bytes.length;
+				},
+				writeInt(offset = 0, x = 0)
+				{
+					const write = this.uInt(patch);
+					for (let i = 0; i < 4; ++i)
+					{
+					   this.chunk.bytes[offset + i] = write[i];
+					}
+				},
+				jump(spot)
+				{
+					const patch = this.chunk.bytes.length - spot - 4;
+					this.writeInt(spot, patch);
+				},
+				goTo(spot, to)
+				{
+					this.writeInt(spot, to);
 				},
 				visit(node)
 				{
@@ -1398,9 +1544,76 @@ const Engel = (() =>
 						case NodeType.NOT:
 							this.visitUnary(node, op.NOT);
 							break;
+						case NodeType.BLOCK:
+						{
+							this.beginScope();
+							for (const child of node.nodes)
+							{
+								this.visit(child);
+							}
+							this.endScope();
+							break;
+						}
+						case NodeType.DECLARE:
+						{
+							for (const declaration of node.list)
+							{
+								for (let i = this.curr.locals.length - 1; i >= 0; --i)
+								{
+									const local = this.curr.locals[i];
+									if (local.depth != -1 && local.depth < this.curr.depth)
+									{
+										break;
+									}
+									if (declaration.name === local.name)
+									{
+										this.error(`${declaration.name} already defined in scope.`);
+										break;
+									}
+								}
+								if (declaration.value !== null)
+								{
+									this.addLocal(declaration.name, node.isConst);
+									this.visit(declaration.value);
+								}
+								else
+								{
+									this.emit(op.NULL);
+									this.addLocal(declaration.name, node.isConst);
+								}
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+							}
+							break;
+						}
 						case NodeType.FUNC:
 						{
 							const next = CompilerScope(this.curr);
+							this.beginScope();
+							this.addLocal('call', true, true);
+							this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+							for (const arg of func.args)
+							{
+								if (arg.type != NodeType.GET)
+								{
+									this.error('Invalid expression for function parameter.');
+								}
+								this.addLocal(arg.name, false, true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+							}
+							this.visit(node.body);
+							this.endScope();
+							const result = this.endCompilerScope();
+							if (node.name !== null)
+							{
+								result.name = node.name;
+							}
+							this.emitClosure(result);
+							for (const upvalue of result.upvalues)
+							{
+								this.emit(
+									upvalue.isLocal ? 1 : 0,
+									...this.uLEB(this.upvalue.index));
+							}
 						}
 					}
 				},
@@ -1577,4 +1790,7 @@ const Engel = (() =>
 		5 => 6
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
-Engel.run(Engel.compile(`'foo' + 'bar'`));
+Engel.run(Engel.compile(`let i = 30
+{
+	let i = 20 + 4
+}`));
