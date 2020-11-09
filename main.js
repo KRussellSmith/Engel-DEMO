@@ -10,18 +10,21 @@ const Engel = (() =>
 		return result;
 	};
 	const op = Enum(
-		'ADD', 'SUB', 'MUL',
-		'INC', 'DEC', 'CONST',
-		'DIV', 'EXP', 'LOAD',
-		'FIN', 'NEG', 'NOT',
-		'JMP', 'AND', 'OR',
-		'CND', 'CND_NOT', 'POP',
-		'EMIT', 'CONCAT', 'TO_STR',
-		'STORE', 'GET', 'LT',
-		'GT', 'LE', 'GE',
-		'EQUIV', 'NOT_EQUIV',
-		'STORE_LOCAL', 'GET_LOCAL',
-		'SET', 'ERUPT', 'MOD');
+		'ADD',       'SUB',       'MUL',
+		'DIV',       'EXP',       'LOAD',
+		'LS',        'RS',        'BAND',
+		'BOR',       'XOR',       'BNOT',
+		'NEG',       'NOT',       'MOD',
+		'INC',       'DEC',       'CONST',
+		'TRUE',      'FALSE',     'NULL',
+		'JMP',       'AND',       'OR',
+		'CND',       'CND_NOT',   'POP',
+		'EMIT',      'CONCAT',    'TO_STR',
+		'STORE',     'GET',       'LT',
+		'GT',        'LE',        'GE',
+		'EQUIV',     'NOT_EQUIV', 'STORE_LOCAL',
+		'GET_LOCAL', 'SET',       'ERUPT',
+		'DUP', 'RETURN');
 	
 	const ValueType = Enum(
 		'INT',  'REAL',  'STRING',
@@ -175,7 +178,6 @@ const Engel = (() =>
 							return this.error('Unterminated string!');
 						}
 						const curr = this.advance();
-						//alert(curr)
 						switch (curr)
 						{
 							// The terminator:
@@ -479,7 +481,7 @@ const Engel = (() =>
 			'RETURN',     'DECLARE',       'BLOCK',
 			'FUNC_BLOCK', 'FUNC',          'HASH',
 			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
-			'OBJ',        'FIN');
+			'OBJ',        'EXPR',          'FIN');
 		const Node = (() =>
 		{
 			const base = (type, line = 0) => ({
@@ -1101,13 +1103,125 @@ const Engel = (() =>
 				{
 					return this.assignment();
 				},
+				block()
+				{
+					this.eat(TokenType.LBRACE, 'Expected opening brace.');
+					const start = this.curr;
+					const nodes = [];
+					for (;;)
+					{
+						if (this.sniff(TokenType.FIN))
+						{
+							this.error(start, 'Expected closing brace.');
+							break;
+						}
+						if (this.taste(TokenType.RBRACE))
+						{
+							break;
+						}
+						const stmt = this.declaration();
+						if (stmt !== null)
+						{
+							nodes.push(stmt);
+						}
+					}
+					return Node.Block(nodes, this.prev.line);
+				},
 				statement()
 				{
 					if (this.taste(TokenType.ENDL))
 					{
 						return null;
 					}
-					return this.expression();
+					else if (this.taste(TokenType.WHILE))
+					{
+						const condition = this.expression();
+						this.skipBreaks();
+						const body = this.block();
+						let other = null;
+						this.skipBreaks();
+						if (this.taste(TokenType.ELSE))
+						{
+							this.skipBreaks();
+							other = this.block();
+						}
+						return Node.While(condition, body, other, this,prev.line);
+					}
+					else if (this.taste(TokenType.IF))
+					{
+						const condition = this.expression();
+						this.skipBreaks();
+						const body = this.block();
+						let other = null;
+						this.skipBreaks();
+						if (this.taste(TokenType.ELSE))
+						{
+							this.skipBreaks();
+							other = this.block();
+						}
+						return Node.IfElse(condition, body, other, this,prev.line);
+					}
+					else if (this.taste(TokenType.MATCH))
+					{
+						this.skipBreaks();
+						const start = this.curr;
+						const comp = this.expression();
+						this.skipBreaks();
+						this.eat(TokenType.LBRACE, 'Expected opening brace');
+						const cases = [];
+						for (;;)
+						{
+							this.skipBreaks();
+							if (this.sniff(TokenType.FIN))
+							{
+								this.error(start, 'Expected closing brace.');
+								break;
+							}
+							if (this.taste(TokenType.RBRACE))
+							{
+								break;
+							}
+							const checks = [];
+							do
+							{
+								this.skipBreaks()
+								const expr = this.expression();
+								this.checks.push(expr);
+							} while (this.taste(TokenType.COMMA));
+							this.eat(TokenType.FAT_ARROW, 'Expected fat arrow (=>)');
+							this.skipBreaks();
+							const then = this.statement();
+							const curr = Node.Case(checks, then);
+							this.cases.push(curr);
+						}
+						let other = null;
+						this.skipBreaks();
+						if (this.taste(TokenType.ELSE))
+						{
+							this.skipBreaks();
+							other = this.block();
+						}
+						return Node.Match(comp, cases, other, start.line);
+					}
+					else if (this.taste(TokenType.CONTINUE))
+					{
+						return Node.Nilary(NodeType.CONTINUE, this.prev.line)
+					}
+					else if (this.taste(TokenType.BREAK))
+					{
+						return Node.Nilary(NodeType.BREAK, this.prev.line)
+					}
+					else if (this.taste(TokenType.RETURN))
+					{
+						const value = this.expression();
+						return Node.Unary(NodeType.RETURN, value, this.prev.line)
+					}
+					else if (this.sniff(TokenType.LBRACE))
+					{
+						return this.block();
+					}
+					const value = this.expression();
+					return Node.Unary(NodeType.EXPR, value, this.prev.line);
 				},
 				declaration()
 				{
@@ -1135,23 +1249,32 @@ const Engel = (() =>
 				return () => Parser.parse.call(Parser);
 			};
 		};
-		
+		const Chunk = () => ({
+		   bytes: [],
+		   consts: [],
+		});
+		const Func = (name = null) => ({
+			name, chunk: Chunk(),
+		});
 		const compiler = (parser) =>
 		{
-			const Chunk = () => ({
-				bytes:  [],
-				consts: [],
-			})
+			const CompilerScope = daddy =>
+			({
+				func:   Func(),
+				locals: [],
+				depth:  0,
+				daddy,
+			});
 			const Compiler = {
-				chunk: null,
+				curr: null,
 				addConst(value)
 				{
-					this.chunk.consts.push(value);
-					return this.uLEB(this.chunk.consts.length - 1);
+					this.curr.func.chunk.consts.push(value);
+					return this.uLEB(this.curr.func.chunk.consts.length - 1);
 				},
 				emit(...ops)
 				{
-					this.chunk.bytes.push(...ops);
+					this.curr.func.chunk.bytes.push(...ops);
 				},
 				uLEB(x)
 				{
@@ -1168,43 +1291,123 @@ const Engel = (() =>
 					} while (x != 0);
 					return result;
 				},
+				visitBinary(node, op)
+				{
+					this.visit(node.left);
+					this.visit(node.right);
+					this.emit(op);
+				},
+				visitUnary(node, op)
+				{
+					this.visit(node.value);
+					this.emit(op);
+				},
+				emitConst(value, type)
+				{
+					this.emit(op.CONST);
+					this.emit(...this.addConst(Value(type, value)));
+				},
+				beginScope()
+				{
+					++this.curr.depth;
+				},
+				endScope()
+				{
+					--this.curr.depth;
+					while (
+						this.curr.locals.length > 0 &&
+						this.curr.locals[this.curr.locals.length - 1].depth > this.curr.depth)
+					{
+						this.emit(op.POP);
+					}
+					this.curr.locals.pop();
+				},
+				endCompilerScope()
+				{
+					this.emit(op.NULL, op.RETURN);
+					const { func } = this.curr;
+					if (this.curr.daddy !== null)
+					{}
+					this.curr = this.curr.daddy;
+					return func;
+				},
 				visit(node)
 				{
 					switch (node.type)
 					{
-						case NodeType.INT:
-						{
-							this.emit(op.CONST);
-							const value = Value(ValueType.INT, parseInt(node.value));
-							this.emit(...this.addConst(value));
+						case NodeType.EXPR:
+							this.visitUnary(node, op.POP);
 							break;
-						}
+						case NodeType.INT:
+							this.emitConst(parseInt(node.value), ValueType.INT);
+							break;
+						case NodeType.REAL:
+							this.emitConst(parseFloat(node.value), ValueType.REAL);
+							break;
+						case NodeType.STRING:
+							this.emitConst(node.value, ValueType.STRING)
+							break;
+						case NodeType.NULL:
+							this.emitConst(null, ValueType.NULL);
+							break;
+						case NodeType.TRUE:
+							this.emitConst(true, ValueType.NULL);
+							break;
+						case NodeType.NULL:
+							this.emitConst(null, ValueType.NULL);
+							break;
 						case NodeType.ADD:
-							this.visit(node.left);
-							this.visit(node.right);
-							this.emit(op.ADD);
+							this.visitBinary(node, op.ADD);
 							break;
 						case NodeType.SUB:
-							this.visit(node.left);
-							this.visit(node.right);
-							this.emit(op.SUB);
+							this.visitBinary(node, op.SUB);
 							break;
 						case NodeType.MUL:
-							this.visit(node.left);
-							this.visit(node.right);
-							this.emit(op.MUL);
+							this.visitBinary(node, op.MUL);
+							break;
+						case NodeType.MOD:
+							this.visitBinary(node, op.MOD);
 							break;
 						case NodeType.DIV:
-							this.visit(node.left);
-							this.visit(node.right);
-							this.emit(op.DIV);
+							this.visitBinary(node, op.DIV);
 							break;
+						case NodeType.EXP:
+							this.visitBinary(node, op.EXP);
+							break;
+						case NodeType.LS:
+							this.visitBinary(node, op.LS);
+							break;
+						case NodeType.RS:
+							this.visitBinary(node, op.RS);
+							break;
+						case NodeType.BAND:
+							this.visitBinary(node, op.BAND);
+							break;
+						case NodeType.BOR:
+							this.visitBinary(node, op.BOR);
+							break;
+						case NodeType.XOR:
+							this.visitBinary(node, op.XOR);
+							break;
+						case NodeType.BNOT:
+							this.visitUnary(node, op.BNOT);
+							break;
+						case NodeType.NEG:
+							this.visitUnary(node, op.NEG);
+							break;
+						case NodeType.NOT:
+							this.visitUnary(node, op.NOT);
+							break;
+						case NodeType.FUNC:
+						{
+							const next = CompilerScope(this.curr);
+						}
 					}
 				},
 				compile()
 				{
 					const parse = parser();
-					this.chunk = Chunk();
+					this.curr = CompilerScope();
 					for (;;)
 					{
 						const node = parse();
@@ -1215,7 +1418,7 @@ const Engel = (() =>
 						}
 						this.visit(node);
 					}
-					return this.chunk;
+					return this.endCompilerScope();
 				},
 			};
 			return () => Compiler.compile.call(Compiler);
@@ -1223,11 +1426,148 @@ const Engel = (() =>
 		
 		return source => compiler(parser(lexer(source)))();
 	})();
-	const interpret = bytes =>
-	{};
+	const run = (() =>
+	{
+		const interpreter = chunk =>
+		{
+			const Frame = (func, slot = 0) => ({
+				func,
+				ip: 0,
+				slot: 0,
+			})
+			const Interpreter = {
+				stack:   [],
+				frames: new Array(64),
+				depth:   0,
+				top:     0,
+				addFrame(frame)
+				{
+					this.frames[this.depth++] = frame;
+				},
+				get frame()
+				{
+					return this.frames[this.depth - 1];
+				},
+				push(x)
+				{
+					this.stack.splice(this.frame.slot + this.top++, 0, x);
+				},
+				pop()
+				{
+					const result = this.stack[this.frame.slot + --this.top];
+					this.stack.splice(this.frame.slot + this.top, 1);
+					return result;
+				},
+				advance()
+				{
+					return this.frame.func.chunk.bytes[this.frame.ip++];
+				},
+				peek(level = 0)
+				{
+					return this.stack[this.frame.slot + this.top - 1 - level];
+				},
+				uLEB()
+				{
+					let result = 0;
+					let shift  = 0;
+					let val;
+					for (;;)
+					{
+						val = this.advance();
+						result |= (val & 0x7F) << shift;
+						if ((val & 0x80) == 0)
+						{
+							break;
+						}
+						shift += 7;
+					}
+					return result;
+				},
+				interpret()
+				{
+					this.addFrame(Frame(chunk));
+					const binary = (func) =>
+					{
+						const b = this.pop();
+						const a = this.pop();
+						this.push(func(a.value, b.value));
+					};
+					const numOp = (func) =>
+					{
+						let type = (
+							this.peek(0).type === ValueType.INT &&
+							this.peek(0).type === this.peek(1).type)
+							? ValueType.INT : ValueType.REAL;
+						binary((a, b) => Value(type, func(a, b)));
+							
+					};
+					let byte;
+					for (;;)
+					{
+						byte = this.advance()
+						switch (byte)
+						{
+							case op.CONST:
+								this.push(this.frame.func.chunk.consts[this.uLEB()]);
+								break;
+							case op.ADD:
+							{
+								if (
+									this.peek(0).type === ValueType.STRING &&
+									this.peek(0).type === this.peek(1).type)
+								{
+									binary((a, b) => Value(ValueType.STRING, a + b));
+								}
+								else
+								{
+									numOp((a, b) => a + b);
+								}
+								break;
+							}
+							case op.SUB:
+								numOp((a, b) => a - b);
+								break;
+							case op.MUL:
+								numOp((a, b) => a * b);
+								break;
+							case op.MOD:
+								numOp((a, b) => a % b);
+								break;
+							case op.DIV:
+								numOp((a, b) => a / b);
+								break;
+							case op.EXP:
+								numOp((a, b) => a ** b);
+								break;
+							case op.NULL:
+								this.push(Value(ValueType.NULL, null));
+								break;
+							case op.POP:
+								this.pop();
+								break;
+							case op.RETURN:
+							{
+								console.log(JSON.stringify(this.stack));
+								const val = this.pop();
+								this.top = this.frame.slot;
+								--this.depth;
+								if (this.depth <= 0)
+								{
+									return;
+								}
+								break;
+							}
+						}
+					}
+				},
+			};
+			return () => Interpreter.interpret.call(Interpreter);
+		};
+		return chunk => interpreter(chunk)();
+	})();
 	return {
-		compile, interpret,
-	}
+		compile, run,
+	};
 })();
 
 /*const source = `
@@ -1237,4 +1577,4 @@ const Engel = (() =>
 		5 => 6
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
-console.log(JSON.stringify(Engel.compile('30 + 5')));
+Engel.run(Engel.compile(`'foo' + 'bar'`));
