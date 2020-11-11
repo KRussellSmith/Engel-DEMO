@@ -29,24 +29,26 @@ const Engel = (() =>
 		'json':   {},
 	}
 	const op = Enum(
-		'ADD',       'SUB',       'MUL',
-		'DIV',       'EXP',       'LOAD',
-		'LS',        'RS',        'BAND',
-		'BOR',       'XOR',       'BNOT',
-		'NEG',       'NOT',       'MOD',
-		'INC',       'DEC',       'CONST',
-		'TRUE',      'FALSE',     'NULL',
-		'JMP',       'AND',       'OR',
-		'CND',       'CND_NOT',   'POP',
-		'EMIT',      'CONCAT',    'TO_STR',
-		'STORE',     'GET',       'LT',
-		'GT',        'LE',        'GE',
-		'EQUIV',     'NOT_EQUIV', 'SET_LOCAL',
+		'ADD',       'SUB',        'MUL',
+		'DIV',       'EXP',        'LOAD',
+		'LS',        'RS',         'BAND',
+		'BOR',       'XOR',        'BNOT',
+		'NEG',       'NOT',        'MOD',
+		'INC',       'DEC',        'CONST',
+		'TRUE',      'FALSE',      'NULL',
+		'JMP',       'AND',        'OR',
+		'CND',       'CND_NOT',    'POP',
+		'EMIT',      'CONCAT',     'TO_STR',
+		'STORE',     'GET',        'LT',
+		'GT',        'LE',         'GE',
+		'EQUIV',     'NOT_EQUIV',  'SET_LOCAL',
 		'GET_LOCAL', 'SET_GLOBAL', 'ERUPT',
-		'DUP',       'CLOSURE',   'CALL',
-		'IMPORT',    'EXPORT',    'DEF_VAR',
+		'DUP',       'CLOSURE',    'CALL',
+		'IMPORT',    'EXPORT',     'DEF_VAR',
 		'DEF_CONST', 'GET_GLOBAL', 'CLOSE',
-		'RETURN');
+		'GET_UPVAL', 'SET_UPVAL',  'GOTO',
+		'ROT2',      'ROT3',       'ROT4',
+		'DUMP',      'RETURN');
 	
 	const ValueType = Enum(
 		'INT',  'REAL',  'STRING',
@@ -309,7 +311,7 @@ const Engel = (() =>
 							return Token(TokenType.SUB, this);
 						case '*':
 							if (this.match('='))
-							{ 
+							{
 								return Token(TokenType.MUL_SET, this);
 							}
 							return Token(TokenType.MUL, this);
@@ -440,9 +442,9 @@ const Engel = (() =>
 						case ')':
 							return Token(TokenType.RPAREN, this);
 						case '[':
-						return Token(TokenType.LBRACK, this);
+							return Token(TokenType.LBRACK, this);
 						case ']':
-						return Token(TokenType.RBRACK, this);
+							return Token(TokenType.RBRACK, this);
 						default:
 						{
 							if (this.isDigit(char))
@@ -495,11 +497,10 @@ const Engel = (() =>
 			'REAL',       'INT',           'GET',
 			'ENDL',       'LPAREN',        'RPAREN',
 			'TRUE',       'FALSE',         'AND',
-			'OR',         'EQUIV',         'ELSE',
+			'OR',         'ELSE',
 			'IF',         'SET',           'LBRACE',
-			'RBRACE',     'LT',            'GT',
-			'LE',         'GE',            'NOT',
-			'NOT_EQUIV',  'NULL',          'FOR',
+			'RBRACE',     'COMP',          'NOT',
+			'NULL',       'FOR',
 			'WHILE',      'BREAK',         'CONTINUE',
 			'THIS',       'CALL',          'MATCH',
 			'RETURN',     'DECLARE',       'BLOCK',
@@ -585,6 +586,13 @@ const Engel = (() =>
 				   ...base(NodeType.FUNC_BLOCK, line),
 				   nodes,
 				}),
+				Comparison: (type, value) => ({
+					type, value
+				}),
+				Comparisons: (primer, list, line) => ({
+					...base(NodeType.COMP, line),
+					primer, list,
+				}),
 			}
 		})();
 		const parser = (scan) =>
@@ -604,9 +612,9 @@ const Engel = (() =>
 				{
 					console.log(`[${token.line}:${token.collumn}] ${message}`);
 				},
-				sniff(type)
+				sniff(...types)
 				{
-					return type === this.curr.type;
+					return types.indexOf(this.curr.type) >= 0;
 				},
 				eat(type, error)
 				{
@@ -618,9 +626,9 @@ const Engel = (() =>
 					this.advance();
 					this.error(this.curr, error);
 				},
-				taste(type)
+				taste(...types)
 				{
-					if (this.sniff(type))
+					if (this.sniff(...types))
 					{
 						this.advance();
 						return true;
@@ -972,7 +980,7 @@ const Engel = (() =>
 								type = NodeType.LS;
 								break;
 							case TokenType.RS:
-								type = nodeType.RS;
+								type = NodeType.RS;
 								break;
 						}
 						result = Node.Binary(type, result, right);
@@ -1017,36 +1025,27 @@ const Engel = (() =>
 				},
 				comparision()
 				{
-					let result = this.bor();
-					while (
-						this.taste(TokenType.LT) ||
-						this.taste(TokenType.GT) ||
-						this.taste(TokenType.LE) ||
-						this.taste(TokenType.GE))
+					let expr = this.bor();
+					const compare = [
+						TokenType.LT,
+						TokenType.GT,
+						TokenType.LE,
+						TokenType.GE,
+						TokenType.EQUIV,
+						TokenType.NOT_EQUIV];
+					if (this.taste(...compare))
 					{
-						const token = this.prev;
-						this.skipBreaks();
-						const right = this.bor();
-						let type = null;
-						switch (token.type)
+						const list = []
+						do
 						{
-							case TokenType.LT:
-								type = NodeType.LT;
-								break;
-							case TokenType.GT:
-								type = nodeType.GT;
-								break;
-							case TokenType.LE:
-								type = NodeType.LE;
-								break;
-							case TokenType.GE:
-								type = nodeType.GE;
-								break;
-						}
-						result = Node.Binary(type, result, right);
+							this.skipBreaks();
+							const comp = Node.Comparison(this.prev.type, this.bor());
+							list.push(comp);
+						} while (this.taste(...compare));
+						return Node.Comparisons(expr, list, this.prev.line)
 					}
-				   return result;
-				},
+				   return expr;
+				},/*
 				equality()
 				{
 					let result = this.comparision();
@@ -1064,20 +1063,20 @@ const Engel = (() =>
 								type = NodeType.EQUIV;
 								break;
 							case TokenType.NOT_EQUIV:
-								type = nodeType.NOT_EQUIV;
+								type = NodeType.NOT_EQUIV;
 								break;
 						}
 						result = Node.Binary(type, result, right);
 					}
 					return result;
-				},
+				},*/
 				and()
 				{
-					let result = this.equality();
+					let result = this.comparision();
 					while (this.taste(TokenType.AND))
 					{
 						this.skipBreaks();
-						result = Node.Binary(NodeType.AND, result, this.equality());
+						result = Node.Binary(NodeType.AND, result, this.comparision());
 					}
 					return result;
 				},
@@ -1172,7 +1171,7 @@ const Engel = (() =>
 							this.skipBreaks();
 							other = this.block();
 						}
-						return Node.While(condition, body, other, this,prev.line);
+						return Node.While(condition, body, other, this.prev.line);
 					}
 					else if (this.taste(TokenType.IF))
 					{
@@ -1186,7 +1185,7 @@ const Engel = (() =>
 							this.skipBreaks();
 							other = this.block();
 						}
-						return Node.IfElse(condition, body, other, this,prev.line);
+						return Node.IfElse(condition, body, other, this.prev.line);
 					}
 					else if (this.taste(TokenType.MATCH))
 					{
@@ -1343,9 +1342,20 @@ const Engel = (() =>
 				locals:   [],
 				depth:    0,
 				upvalues: [],
-				error: null,
+				error:    null,
+				loop:     null,
 				daddy,
 			});
+			const Loop = (scope) =>
+			{
+				const result = {
+					continues: [],
+					breaks:    [],
+					depth: scope.depth,
+					daddy: scope.loop,
+				};
+				return scope.loop = result;
+			}
 			const Compiler = {
 				curr: null,
 				get chunk()
@@ -1495,7 +1505,7 @@ const Engel = (() =>
 				},
 				writeInt(offset = 0, x = 0)
 				{
-					const write = this.uInt(patch);
+					const write = this.uInt(x);
 					for (let i = 0; i < 4; ++i)
 					{
 					   this.chunk.bytes[offset + i] = write[i];
@@ -1509,6 +1519,14 @@ const Engel = (() =>
 				goTo(spot, to)
 				{
 					this.writeInt(spot, to);
+				},
+				beginLoop()
+				{
+					return Loop(this.curr);
+				},
+				endLoop()
+				{
+					return this.curr.loop = this.curr.loop.daddy;
 				},
 				globals: [],
 				visit(node)
@@ -1581,6 +1599,174 @@ const Engel = (() =>
 						case NodeType.NOT:
 							this.visitUnary(node, op.NOT);
 							break;
+						case NodeType.COMP:
+						{
+							const getOp = (type) =>
+							{
+								switch (type)
+								{
+									case TokenType.LT:
+										return op.LT;
+									case TokenType.GT:
+										return op.GT;
+									case TokenType.LE:
+										return op.LE;
+									case TokenType.GE:
+										return op.GE;
+									case TokenType.EQUIV:
+										return op.EQUIV;
+									case TokenType.NOT_EQUIV:
+										return op.NOT_EQUIV;
+								}
+								return null;
+							}
+							this.visit(node.primer)
+							if (node.list.length === 1)
+							{
+								this.visitUnary(node.list[0], getOp(node.list[0].type));
+							}
+							else
+							{
+								const jumps = [];
+								for (let i = 0; i < node.list.length; ++i)
+								{
+									const comp = node.list[i];
+									this.visitUnary(comp, op.DUP);
+									this.emit(op.ROT3);
+									this.emit(getOp(comp.type));
+									if (i < node.list.length - 1)
+									{
+										this.emit(op.AND);
+										jumps.push(this.saveSpot());
+										this.emit(...this.uInt());
+									}
+								}
+								// The result of these operations is going to be on top,
+								// So this will switch it with 
+								for (const jump of jumps)
+								{
+									this.jump(jump);
+								}
+								this.emit(op.ROT2, op.POP);
+								//this.emit(op.POP, op.ROT2, op.POP);
+							}
+							break;
+						}
+						case NodeType.IF:
+						{
+							this.visit(node.condition);
+							
+							this.emit(op.AND);
+							const ifFalse = this.saveSpot();
+							this.emit(...this.uInt());
+							this.visit(node.then);
+							this.emit(op.JMP);
+							const ifTrue = this.saveSpot();
+							this.emit(...this.uInt());
+							
+							if (node.other !== null)
+							{
+								this.jump(ifFalse);
+								this.emit(op.POP);
+								this.visit(node.other);
+								this.jump(ifTrue);
+							}
+							else
+							{
+								this.jump(ifFalse);
+								this.emit(op.POP);
+								this.jump(ifTrue);
+							}
+							break;
+						}
+						case NodeType.WHILE:
+						{
+							this.beginScope();
+							let ifTrue, ifFalse;
+							const hasElse = node.other !== null;
+							if (hasElse)
+							{
+								this.visit(node.condition);
+								this.emit(op.AND);
+								ifFalse = this.saveSpot();
+								this.emit(...this.uInt());
+								this.emit(op.JMP);
+								ifTrue = this.saveSpot();
+								this.emit(...this.uInt());
+							}
+							const start = this.saveSpot();
+							this.visit(node.condition);
+							this.emit(op.AND);
+							const mainBreak = this.saveSpot();
+							this.emit(...this.uInt());
+							if (hasElse)
+							{
+								this.jump(ifTrue);
+							}
+							const loop = this.beginLoop();
+							this.visit(node.then);
+							this.endLoop();
+							this.emit(op.GOTO);
+							this.emit(...this.uInt(start));
+							if (hasElse)
+							{
+								this.jump(ifFalse);
+								this.emit(op.POP);
+								this.visit(node.other);
+								this.emit(op.JMP);
+								const skipPop = this.saveSpot();
+								this.emit(...this.uInt());
+								const end = this.saveSpot();
+								for (const jump of loop.continues)
+								{
+									this.goTo(jump, start);
+								}
+								for (const brk of loop.breaks)
+								{
+									this.goTo(brk, end);
+								}
+								this.jump(mainBreak);
+								this.emit(op.POP);
+								this.jump(skipPop);
+							}
+							else
+							{
+								for (const jump of loop.continues)
+								{
+									this.goTo(jump, start);
+								}
+								for (const brk of loop.breaks)
+								{
+									this.goTo(brk, end);
+								}
+								this.jump(mainBreak);
+								this.emit(op.POP);
+							}
+							this.endScope();
+							break;
+						}
+						case NodeType.JUMP:
+						{
+							this.emit(op.GOTO);
+							this.curr.loop.continues.push(this.saveSpot());
+							this.emit(...this.uInt());
+							break;
+						}
+						case NodeType.BREAK:
+						{
+							this.emit(op.GOTO);
+							this.curr.loop.breaks.push(this.saveSpot());
+							this.emit(...this.uInt());
+							break;
+						}
+						case NodeType.AND:
+						{
+							break;
+						}
+						case NodeType.OR:
+						{
+							break;
+						}
 						case NodeType.BLOCK:
 						{
 							this.beginScope();
@@ -1837,8 +2023,11 @@ const Engel = (() =>
 				},
 				peek(level = 0)
 				{
-					//alert(this.stack[this.top - 1 - level]);
 					return this.stack[this.top - 1 - level];
+				},
+				put(level = 0, x)
+				{
+					return this.stack[this.top - 1 - level] = x;
 				},
 				uLEB()
 				{
@@ -1856,6 +2045,14 @@ const Engel = (() =>
 						shift += 7;
 					}
 					return result;
+				},
+				uInt()
+				{
+					return (
+						(this.advance() << 24) |
+						(this.advance() << 16) |
+						(this.advance() << 8)  |
+						(this.advance()));
 				},
 				error(message = '')
 				{
@@ -1932,6 +2129,33 @@ const Engel = (() =>
 							this.openUpvalues = upvalue.next;
 						}
 				},
+				isTrue(x)
+				{
+					return (
+						x !== false &&
+						x !== null  &&
+						x !== 0);
+				},
+				isNum(x)
+				{
+					return x.type === ValueType.INT || x.type === ValueType.REAL;
+				},
+				equiv(a, b)
+				{
+					const checkTypes = (a, b) =>
+					{
+						if (a.type !== b.type)
+						{
+							return isNum(a) && isNum(b);
+						}
+						return true;
+					}
+					if (!checkTypes(a, b))
+					{
+						return false;
+					}
+					return a.value === b.value;
+				},
 				interpret()
 				{
 					this.addFrame(Frame(chunk));
@@ -1949,18 +2173,54 @@ const Engel = (() =>
 							? ValueType.INT : ValueType.REAL;
 						binary((a, b) => Value(type, func(a, b)));
 					};
+					const compOp = (func) =>
+					{
+						binary((a, b) => Value(ValueType.BOOL, func(a, b)));
+					};
 					let byte;
 					
-					for (const byte of this.frame.func.chunk.bytes)
-					{
-					///	console.log(op[byte]);
-					}
 					for (;;)
 					{
 						byte = this.advance();
 						console.log(op[byte]);
 						switch (byte)
 						{
+							case op.DUP:
+								this.push(this.peek());
+								break;
+							case op.ROT2:
+							{
+								const first  = this.peek(0);
+								const second = this.peek(1);
+								
+								this.put(0, second);
+								this.put(1, first);
+								break;
+							}
+							case op.ROT3:
+							{
+								const first  = this.peek(0);
+								const second = this.peek(1);
+								const third  = this.peek(2);
+								
+								this.put(0, second);
+								this.put(1, third);
+								this.put(2, first);
+								break;
+							}
+							case op.ROT4:
+							{
+								const first   = this.peek(0);
+								const second  = this.peek(1);
+								const third   = this.peek(2);
+								const fourth  = this.peek(3);
+								
+								this.put(0, second);
+								this.put(1, third);
+								this.put(2, fourth);
+								this.put(3, first);
+								break;
+							}
 							case op.CONST:
 								this.push(this.getConst());
 								break;
@@ -1984,6 +2244,38 @@ const Engel = (() =>
 									return;
 								}
 								this.globals[name].value = this.pop();
+								break;
+							}
+							case op.LT:
+							{
+								compOp((a, b) => a < b);
+								break;
+							}
+							case op.GT:
+							{
+								compOp((a, b) => a > b);
+								break;
+							}
+							case op.LE:
+							{
+								compOp((a, b) => a <= b);
+								break;
+							}
+							case op.GE:
+							{
+								compOp((a, b) => a >= b);
+								break;
+							}
+							case op.EQUIV:
+							{
+								const result = Value(ValueType.BOOL, this.equiv(this.pop(), this.pop()));
+								this.push(result);
+								break;
+							}
+							case op.NOT_EQUIV:
+							{
+								const result = Value(ValueType.BOOL, !this.equiv(this.pop(), this.pop()));
+								this.push(result);
 								break;
 							}
 							case op.GET_LOCAL:
@@ -2061,11 +2353,40 @@ const Engel = (() =>
 							case op.POP:
 								this.pop();
 								break;
+							case op.JMP:
+							{
+								const jump = this.uInt();
+								this.frame.ip += jump;
+								break;
+							}
+							case op.GOTO:
+								this.frame.ip = this.uInt();
+								break;
+							case op.AND:
+							{
+								const jump = this.uInt();
+								if (!this.isTrue(this.peek().value))
+								{
+									this.frame.ip += jump;
+								}
+								else
+								{
+									this.pop();
+								}
+								break;
+							}
+							case op.DUMP:
+							{
+								alert(JSON.stringify(this.stack));
+								break;
+							}
 							case op.CALL:
+							{
 								const args = this.uLEB();
 								this.callVal(this.peek(args), args);
 								
 								break;
+							}
 							case op.CLOSURE:
 							{
 								this.push(this.getConst());
@@ -2107,6 +2428,11 @@ const Engel = (() =>
 								this.push(val);
 								break;
 							}
+							default:
+							{
+								this.error('Unrecognized op.');
+								return;
+							}
 						}
 					}
 				},
@@ -2116,7 +2442,7 @@ const Engel = (() =>
 		return chunk => interpreter(chunk)();
 	})();
 	return {
-		compile, run,
+		compile, run, op
 	};
 })();
 
@@ -2128,10 +2454,5 @@ const Engel = (() =>
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
 Engel.run(Engel.compile(`
-let foo
-{
-	let x = 350
-	foo = (() -> x * 2)
-}
-let bar = foo()
+let a = 1 < 2 < 3 == 3 < 5
 `));
