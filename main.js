@@ -9,6 +9,25 @@ const Engel = (() =>
 		}
 		return result;
 	};
+	const NativeLibs = {
+		'std': // My all-time favorite library name.
+		{
+			'print': (vm, args) =>
+			{
+				for (let i = vm.top - 1; i >= vm.top - args; --i)
+				{
+					console.log(vm.stack[i]);
+				}
+			},
+		},
+		// Just going to claim these libraries:
+		'gles20': {},
+		'gles30': {},
+		'canvas': {},
+		'math':   {},
+		'game':   {},
+		'json':   {},
+	}
 	const op = Enum(
 		'ADD',       'SUB',       'MUL',
 		'DIV',       'EXP',       'LOAD',
@@ -22,9 +41,12 @@ const Engel = (() =>
 		'EMIT',      'CONCAT',    'TO_STR',
 		'STORE',     'GET',       'LT',
 		'GT',        'LE',        'GE',
-		'EQUIV',     'NOT_EQUIV', 'STORE_LOCAL',
-		'GET_LOCAL', 'SET',       'ERUPT',
-		'DUP', 'RETURN');
+		'EQUIV',     'NOT_EQUIV', 'SET_LOCAL',
+		'GET_LOCAL', 'SET_GLOBAL', 'ERUPT',
+		'DUP',       'CLOSURE',   'CALL',
+		'IMPORT',    'EXPORT',    'DEF_VAR',
+		'DEF_CONST', 'GET_GLOBAL', 'CLOSE',
+		'RETURN');
 	
 	const ValueType = Enum(
 		'INT',  'REAL',  'STRING',
@@ -57,7 +79,8 @@ const Engel = (() =>
 			'THIS',      'CALL',       'MATCH',
 			'RETURN',    'LET',        'DEC',
 			'FUNC',      'HASH_START', 'OBJ_START',
-			'FAT_ARROW', 'ERROR',      'FIN');
+			'FAT_ARROW', 'IMPORT',     'ERROR',
+			'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -85,6 +108,7 @@ const Engel = (() =>
 				'call':   TokenType.CALL,
 				'let':    TokenType.LET,
 				'dec':    TokenType.DEC,
+				'import': TokenType.IMPORT,
 			};
 			const Lexer = {
 				source,
@@ -285,7 +309,7 @@ const Engel = (() =>
 							return Token(TokenType.SUB, this);
 						case '*':
 							if (this.match('='))
-							{
+							{ 
 								return Token(TokenType.MUL_SET, this);
 							}
 							return Token(TokenType.MUL, this);
@@ -481,7 +505,8 @@ const Engel = (() =>
 			'RETURN',     'DECLARE',       'BLOCK',
 			'FUNC_BLOCK', 'FUNC',          'HASH',
 			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
-			'OBJ',        'EXPR',          'FIN');
+			'OBJ',        'EXPR',          'FUNC_CALL',
+			'IMPORT',     'FIN');
 		const Node = (() =>
 		{
 			const base = (type, line = 0) => ({
@@ -503,7 +528,6 @@ const Engel = (() =>
 				}),
 				Trinary: (type, left, middle, right, line) => ({
 					...base(type, line),
-					
 				}),
 				Get: (token) => ({
 					...base(NodeType.GET, token.line),
@@ -550,7 +574,7 @@ const Engel = (() =>
 					args, name, body,
 				}),
 				FuncCall: (args, callee, line) => ({
-					...base(NodeType.CALL, line),
+					...base(NodeType.FUNC_CALL, line),
 					args, callee,
 				}),
 				Block: (nodes = [], line) => ({
@@ -1128,7 +1152,6 @@ const Engel = (() =>
 							nodes.push(stmt);
 						}
 					}
-					alert('done!');
 					return Node.Block(nodes, this.prev.line);
 				},
 				statement()
@@ -1251,7 +1274,7 @@ const Engel = (() =>
 					}
 					else if (this.taste(TokenType.DEC))
 					{
-						const result = Node.Declarations(false, parser.last.line);
+						const result = Node.Declarations(false, this.prev.line);
 						do
 						{
 							this.skipBreaks();
@@ -1265,6 +1288,10 @@ const Engel = (() =>
 							result.list.push(declare);
 						} while (this.taste(TokenType.COMMA));
 						return result;
+					}
+					else if (this.taste(TokenType.IMPORT))
+					{
+						return Node.Unary(NodeType.IMPORT, this.factor());
 					}
 					return this.statement();
 				},
@@ -1295,19 +1322,22 @@ const Engel = (() =>
 		   consts: [],
 		});
 		const Func = (name = null) => ({
-			name, chunk: Chunk(),
+			name,
+			chunk: Chunk(),
+			upvalues: [],
 		});
 		const compiler = (parser) =>
 		{
 			const Local = (name, isConst) => ({
 				name,
 				depth: -1,
+				captured: false,
 				isConst,
 			});
 			const Upvalue = (index = 0, isLocal = true) => ({
 				index, isLocal,
 			})
-			const CompilerScope = daddy =>
+			const CompilerScope = (daddy = null) =>
 			({
 				func:     Func(),
 				locals:   [],
@@ -1318,7 +1348,7 @@ const Engel = (() =>
 			});
 			const Compiler = {
 				curr: null,
-				get chunck()
+				get chunk()
 				{
 					return this.curr.func.chunk;
 				},
@@ -1333,7 +1363,7 @@ const Engel = (() =>
 				},
 				emit(...ops)
 				{
-					this.curr.func.chunk.bytes.push(...ops);
+					this.chunk.bytes.push(...ops);
 				},
 				uLEB(x)
 				{
@@ -1363,8 +1393,9 @@ const Engel = (() =>
 				},
 				emitConst(value, type)
 				{
-					this.emit(op.CONST);
-					this.emit(...this.addConst(Value(type, value)));
+					this.emit(
+						op.CONST,
+						...this.addConst(Value(type, value)));
 				},
 				beginScope()
 				{
@@ -1377,8 +1408,8 @@ const Engel = (() =>
 						this.curr.locals.length > 0 &&
 						this.curr.locals[this.curr.locals.length - 1].depth > this.curr.depth)
 					{
-						this.emit(op.POP);
-						this.curr.locals.pop();
+						const local = this.curr.locals.pop();
+						this.emit(local.captured ? op.CLOSE : op.POP);
 					}
 				},
 				endCompilerScope()
@@ -1389,13 +1420,15 @@ const Engel = (() =>
 					{
 						this.curr.daddy.error = this.curr.error;
 					}
+					func.upvalues = new Array(this.curr.upvalues.length);
 					this.curr = this.curr.daddy;
 					return func;
 				},
 				emitClosure(x)
 				{
-					this.emit(op.CLOSURE);
-					this.emitConst(x, ValueType.FUNC);
+					this.emit(
+						op.CLOSURE,
+						...this.addConst(Value(ValueType.FUNC, x)));
 				},
 				addLocal(name, isConst)
 				{
@@ -1403,11 +1436,11 @@ const Engel = (() =>
 					this.curr.locals.push(local);
 					return local;
 				},
-				findLocal(name)
+				findLocal(name, scope = this.curr)
 				{
-					for (let i = this.curr.locals.length - 1; i >= 0; --i)
+					for (let i = scope.locals.length - 1; i >= 0; --i)
 					{
-						if (this.curr.locals[i].name === name)
+						if (scope.locals[i].name === name)
 						{
 							return i;
 						}
@@ -1425,10 +1458,10 @@ const Engel = (() =>
 							return i;
 						}
 					}
-					this.curr.upvalues.push(Upvalue(index, isConst));
+					this.curr.upvalues.push(Upvalue(index, isLocal));
 					return count;
 				},
-				findUpvalue(name, scode)
+				findUpvalue(name, scope)
 				{
 					if (scope.daddy === null)
 					{
@@ -1477,10 +1510,14 @@ const Engel = (() =>
 				{
 					this.writeInt(spot, to);
 				},
+				globals: [],
 				visit(node)
 				{
 					switch (node.type)
 					{
+						case NodeType.GROUP:
+							this.visit(node.value);
+							break;
 						case NodeType.EXPR:
 							this.visitUnary(node, op.POP);
 							break;
@@ -1556,42 +1593,133 @@ const Engel = (() =>
 						}
 						case NodeType.DECLARE:
 						{
-							for (const declaration of node.list)
+							if (this.curr.depth > 0)
 							{
-								for (let i = this.curr.locals.length - 1; i >= 0; --i)
+								for (const declaration of node.list)
 								{
-									const local = this.curr.locals[i];
-									if (local.depth != -1 && local.depth < this.curr.depth)
+									for (let i = this.curr.locals.length - 1; i >= 0; --i)
 									{
-										break;
+										const local = this.curr.locals[i];
+										if (local.depth != -1 && local.depth < this.curr.depth)
+										{
+											break;
+										}
+										if (declaration.name === local.name)
+										{
+											this.error(`${declaration.name} already defined in scope.`);
+											break;
+										}
 									}
-									if (declaration.name === local.name)
+									if (declaration.value !== null)
 									{
-										this.error(`${declaration.name} already defined in scope.`);
-										break;
+										this.addLocal(declaration.name, node.isConst);
+										this.visit(declaration.value);
+									}
+									else
+									{
+										this.emit(op.NULL);
+										this.addLocal(declaration.name, node.isConst);
+									}
+									this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								}
+							}
+							else
+							{
+								for (const declaration of node.list)
+								{
+									if (declaration.value !== null)
+									{
+										this.visit(declaration.value);
+										this.emit(
+											node.isConst ? op.DEF_CONST : op.DEF_VAR,
+											...this.addConst(Value(ValueType.STRING, declaration.name)));
+									}
+									else
+									{
+										this.emit(
+											op.NULL,
+											node.isConst ? op.DEF_CONST : op.DEF_VAR,
+											...this.addConst(Value(ValueType.STRING, declaration.name)));
 									}
 								}
-								if (declaration.value !== null)
+							}
+							break;
+						}
+						case NodeType.GET:
+						{
+							let depth = this.findLocal(node.name);
+							if (depth >= 0)
+							{
+								if (this.curr.locals[depth].depth === -1)
 								{
-									this.addLocal(declaration.name, node.isConst);
-									this.visit(declaration.value);
+									this.error(`Cannot read ${node.name} within its own declaration.`);
+									break;
 								}
-								else
+								this.emit(
+									op.GET_LOCAL,
+									...this.uLEB(depth));
+							}
+							else if ((depth = this.findUpvalue(node.name, this.curr)) >= 0)
+							{
+								this.emit(
+									op.GET_UPVAL,
+									...this.uLEB(depth));
+							}
+							else
+							{
+								this.emit(
+									op.GET_GLOBAL,
+									...this.addConst(Value(NodeType.STRING, node.name)));
+								
+							}
+							break;
+						}
+						case NodeType.ASSIGN:
+						{
+							const { name } = node.left;
+							let depth = this.findLocal(name);
+							this.visit(node.right);
+							if (depth >= 0)
+							{
+								if (this.curr.locals[depth].isConst)
 								{
-									this.emit(op.NULL);
-									this.addLocal(declaration.name, node.isConst);
+									this.error(`Cannot define constant ${name} after declaration.`);
 								}
-								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								this.emit(
+									op.SET_LOCAL,
+									...this.uLEB(depth));
+								this.emit(
+									op.GET_LOCAL,
+									...this.uLEB(depth));
+							}
+							else if ((depth = this.findUpvalue(name, this.curr)) >= 0)
+							{
+								this.emit(
+									op.SET_UPVAL,
+									...this.uLEB(depth));
+								this.emit(
+									op.GET_UPVAL,
+									...this.uLEB(depth));
+							}
+							else
+							{
+								this.emit(
+									op.SET_GLOBAL,
+									...this.addConst(Value(NodeType.STRING, name)));
+								this.emit(
+									op.GET_GLOBAL,
+									...this.addConst(Value(NodeType.STRING, name)));
+								
 							}
 							break;
 						}
 						case NodeType.FUNC:
 						{
-							const next = CompilerScope(this.curr);
+							this.curr = CompilerScope(this.curr);
 							this.beginScope();
 							this.addLocal('call', true, true);
 							this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
-							for (const arg of func.args)
+							for (const arg of node.args)
 							{
 								if (arg.type != NodeType.GET)
 								{
@@ -1602,18 +1730,42 @@ const Engel = (() =>
 							}
 							this.visit(node.body);
 							this.endScope();
+							const upvalues = this.curr.upvalues;
 							const result = this.endCompilerScope();
 							if (node.name !== null)
 							{
 								result.name = node.name;
 							}
 							this.emitClosure(result);
-							for (const upvalue of result.upvalues)
+							for (const upvalue of upvalues)
 							{
 								this.emit(
 									upvalue.isLocal ? 1 : 0,
-									...this.uLEB(this.upvalue.index));
+									...this.uLEB(upvalue.index));
 							}
+							break;
+						}
+						case NodeType.RETURN:
+						{
+							this.visitUnary(node, op.RETURN);
+							break;
+						}
+						case NodeType.FUNC_CALL:
+						{
+							this.visit(node.callee);
+							for (const arg of node.args)
+							{
+								this.visit(arg);
+							}
+							this.emit(
+								op.CALL,
+								...this.uLEB(node.args.length));
+							break;
+						}
+						case NodeType.IMPORT:
+						{
+							this.visitUnary(node, op.IMPORT);
+							break;
 						}
 					}
 				},
@@ -1647,12 +1799,20 @@ const Engel = (() =>
 				func,
 				ip: 0,
 				slot: 0,
+			});
+			const Upvalue = (value) =>
+			({
+				value,
+				next: null,
+				closed: null
 			})
 			const Interpreter = {
 				stack:   [],
+				globals: {},
 				frames: new Array(64),
 				depth:   0,
 				top:     0,
+				openUpvalues: null,
 				addFrame(frame)
 				{
 					this.frames[this.depth++] = frame;
@@ -1663,12 +1823,12 @@ const Engel = (() =>
 				},
 				push(x)
 				{
-					this.stack.splice(this.frame.slot + this.top++, 0, x);
+					this.stack.splice(this.top++, 0, x);
 				},
 				pop()
 				{
-					const result = this.stack[this.frame.slot + --this.top];
-					this.stack.splice(this.frame.slot + this.top, 1);
+					const result = this.stack[--this.top];
+					this.stack.splice(this.top, 1);
 					return result;
 				},
 				advance()
@@ -1677,7 +1837,8 @@ const Engel = (() =>
 				},
 				peek(level = 0)
 				{
-					return this.stack[this.frame.slot + this.top - 1 - level];
+					//alert(this.stack[this.top - 1 - level]);
+					return this.stack[this.top - 1 - level];
 				},
 				uLEB()
 				{
@@ -1696,6 +1857,81 @@ const Engel = (() =>
 					}
 					return result;
 				},
+				error(message = '')
+				{
+					console.log(message);
+				},
+				call(func, args)
+				{
+					this.depth++;
+					this.frames[this.depth - 1] = Frame(func, this.top - args - 1);
+					return true;
+				},
+				callVal(val, args)
+				{
+					switch (val.type)
+					{
+						case ValueType.FUNC:
+						{
+							return this.call(val.value, args);
+						}
+						case ValueType.NATIVE:
+						{
+							const result = val.value(this.top - args, args);
+							this.top -= args + 1;
+							this.push(result);
+							return true;
+						}
+						default:
+						{
+							this.error('Not a function');
+							break;
+						}
+					}
+					return false;
+				},
+				getConst()
+				{
+					return this.frame.func.chunk.consts[this.uLEB()];
+				},
+				captureUpvalue(local)
+				{
+					let prev = null;
+					let upvalue = this.openUpvalues;
+					
+					while (upvalue !== null && upvalue.location > local)
+					{
+					prev = upvalue;
+						upvalue = upvalue.next;
+					}
+					if (upvalue !== null && upvalue.location === local)
+					{
+						return upvalue;
+					}
+					const newUpvalue = Upvalue(local);
+					newUpvalue.next = Upvalue(local);
+					
+					if (prev == null)
+					{
+						this.openUpvalues = newUpvalue;
+					}
+					else
+					{
+						prev.next = newUpvalue;
+					}
+				},
+				closeUpvalues(last = this.top - 1)
+				{
+					while (
+						this.openUpvalues !== null &&
+						this.stack.indexOf(this.openUpvalues.value) >= last)
+						{
+							const upvalue  = this.openUpvalues = Upvalue(null);
+							upvalue.closed = upvalue.value;
+							upvalue.value =  upvalue.closed;
+							this.openUpvalues = upvalue.next;
+						}
+				},
 				interpret()
 				{
 					this.addFrame(Frame(chunk));
@@ -1712,17 +1948,84 @@ const Engel = (() =>
 							this.peek(0).type === this.peek(1).type)
 							? ValueType.INT : ValueType.REAL;
 						binary((a, b) => Value(type, func(a, b)));
-							
 					};
 					let byte;
+					
+					for (const byte of this.frame.func.chunk.bytes)
+					{
+					///	console.log(op[byte]);
+					}
 					for (;;)
 					{
-						byte = this.advance()
+						byte = this.advance();
+						console.log(op[byte]);
 						switch (byte)
 						{
 							case op.CONST:
-								this.push(this.frame.func.chunk.consts[this.uLEB()]);
+								this.push(this.getConst());
 								break;
+							case op.GET_GLOBAL:
+							{
+								const name = this.getConst().value;
+								if (!(name in this.globals))
+								{
+									this.error(`${name} is undefined.`);
+									return;
+								}
+								this.push(this.globals[name].value);
+								break;
+							}
+							case op.SET_GLOBAL:
+							{
+								const name = this.getConst().value;
+								if (!(name in this.globals))
+								{
+									this.error(`${name} is undefined.`);
+									return;
+								}
+								this.globals[name].value = this.pop();
+								break;
+							}
+							case op.GET_LOCAL:
+								this.push(this.stack[this.frame.slot + this.uLEB()]);
+								break;
+							case op.SET_LOCAL:
+								this.stack[this.frame.slot + this.uLEB()] = this.peek();
+								break;
+							case op.DEF_VAR:
+							{
+									const name = this.getConst().value;
+									if (name in this.globals)
+									{
+										this.error(`${name} already declared.`);
+										return;
+									}
+									this.globals[name] = {
+										value: this.pop(),
+										isConst: false,
+									};
+								break;
+							}
+							case op.DEF_CONST:
+							{
+								const name = this.getConst().value;
+								if (name in this.globals)
+								{
+									this.error(`${name} already declared.`);
+									return;
+								}
+								this.globals[name] = {
+									value: this.pop(),
+									isConst: true,
+								};
+								break;
+							}
+							case op.GET_UPVAL:
+							{
+								const index = this.uLEB();
+								this.push(this.stack[this.frame.slot + index]);
+								break;
+							}
 							case op.ADD:
 							{
 								if (
@@ -1758,16 +2061,50 @@ const Engel = (() =>
 							case op.POP:
 								this.pop();
 								break;
+							case op.CALL:
+								const args = this.uLEB();
+								this.callVal(this.peek(args), args);
+								
+								break;
+							case op.CLOSURE:
+							{
+								this.push(this.getConst());
+								const func = this.peek().value;
+								
+								for (let i = 0; i < func.upvalues.length; ++i)
+								{
+									const isLocal = this.advance() === 1;
+									const index   = this.uLEB();
+									if (isLocal)
+									{
+										func.upvalues[i] = this.captureUpvalue(this.stack[this.frame.slot + index]);
+									}
+									else
+									{
+										func.upvalues[i] = this.frame.func.upvalues[index];
+									}
+								}
+								break;
+							}
+							case op.CLOSE:
+							{
+								this.closeUpvalues();
+								this.pop();
+								break;
+							}
 							case op.RETURN:
 							{
-								console.log(JSON.stringify(this.stack));
+								
+								console.log(JSON.stringify(this.globals));
 								const val = this.pop();
-								this.top = this.frame.slot;
+								this.closeUpvalues(this.frame.slot);
 								--this.depth;
 								if (this.depth <= 0)
 								{
 									return;
 								}
+								this.top = this.frames[this.depth].slot;
+								this.push(val);
 								break;
 							}
 						}
@@ -1790,7 +2127,11 @@ const Engel = (() =>
 		5 => 6
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
-Engel.run(Engel.compile(`let i = 30
+Engel.run(Engel.compile(`
+let foo
 {
-	let i = 20 + 4
-}`));
+	let x = 350
+	foo = (() -> x * 2)
+}
+let bar = foo()
+`));
