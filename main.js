@@ -610,7 +610,7 @@ const Engel = (() =>
 				},
 				error(token, message)
 				{
-					console.log(`[${token.line}:${token.collumn}] ${message}`);
+					console.log(`[${token.line}:${token.column}] ${message}`);
 				},
 				sniff(...types)
 				{
@@ -1549,13 +1549,13 @@ const Engel = (() =>
 							this.emitConst(node.value, ValueType.STRING)
 							break;
 						case NodeType.NULL:
-							this.emitConst(null, ValueType.NULL);
+							this.emit(op.NULL);
 							break;
 						case NodeType.TRUE:
-							this.emitConst(true, ValueType.NULL);
+							this.emit(op.TRUE);
 							break;
-						case NodeType.NULL:
-							this.emitConst(null, ValueType.NULL);
+						case NodeType.FALSE:
+							this.emit(op.FALSE);
 							break;
 						case NodeType.ADD:
 							this.visitBinary(node, op.ADD);
@@ -1654,6 +1654,7 @@ const Engel = (() =>
 						}
 						case NodeType.IF:
 						{
+							//alert(JSON.stringify(node));
 							this.visit(node.condition);
 							
 							this.emit(op.AND);
@@ -1761,9 +1762,26 @@ const Engel = (() =>
 						}
 						case NodeType.AND:
 						{
+							this.visit(node.left);
+							this.emit(op.AND);
+							const jump = this.saveSpot();
+							this.emit(...this.uInt());
+							this.visit(node.right);
+							this.jump(jump);
 							break;
 						}
 						case NodeType.OR:
+						{
+							//alert(JSON.stringify(node))
+							this.visit(node.left);
+							this.emit(op.OR);
+							const jump = this.saveSpot();
+							this.emit(...this.uInt());
+							this.visit(node.right);
+							this.jump(jump);
+							break;
+						}
+						case NodeType.MATCH:
 						{
 							break;
 						}
@@ -1899,6 +1917,14 @@ const Engel = (() =>
 							}
 							break;
 						}
+						case NodeType.FUNC_BLOCK:
+						{
+							for (const child of node.nodes)
+							{
+								this.visit(child);
+							}
+							break;
+						}
 						case NodeType.FUNC:
 						{
 							this.curr = CompilerScope(this.curr);
@@ -1962,7 +1988,6 @@ const Engel = (() =>
 					for (;;)
 					{
 						const node = parse();
-						console.log(JSON.stringify(node));
 						if (node.type === NodeType.FIN)
 						{
 							break;
@@ -1984,7 +2009,7 @@ const Engel = (() =>
 			const Frame = (func, slot = 0) => ({
 				func,
 				ip: 0,
-				slot: 0,
+				slot,
 			});
 			const Upvalue = (value) =>
 			({
@@ -1992,6 +2017,18 @@ const Engel = (() =>
 				next: null,
 				closed: null
 			})
+			const putOrPush = (array = [], index = 0, value = null) =>
+			{
+				if (index >= array.length)
+				{
+					array.push(value)
+				}
+				else
+				{
+					array[index] = value;
+				}
+				return value;
+			}
 			const Interpreter = {
 				stack:   [],
 				globals: {},
@@ -2009,12 +2046,11 @@ const Engel = (() =>
 				},
 				push(x)
 				{
-					this.stack.splice(this.top++, 0, x);
+					return putOrPush(this.stack, this.top++, x);
 				},
 				pop()
 				{
 					const result = this.stack[--this.top];
-					this.stack.splice(this.top, 1);
 					return result;
 				},
 				advance()
@@ -2060,8 +2096,7 @@ const Engel = (() =>
 				},
 				call(func, args)
 				{
-					this.depth++;
-					this.frames[this.depth - 1] = Frame(func, this.top - args - 1);
+					this.frames[this.depth++] = Frame(func, this.top - args - 1);
 					return true;
 				},
 				callVal(val, args)
@@ -2182,7 +2217,11 @@ const Engel = (() =>
 					for (;;)
 					{
 						byte = this.advance();
-						console.log(op[byte]);
+						if (this.depth >= this.frames.length)
+						{
+							this.error('Stack exceeded.');
+							return;
+						}
 						switch (byte)
 						{
 							case op.DUP:
@@ -2279,8 +2318,12 @@ const Engel = (() =>
 								break;
 							}
 							case op.GET_LOCAL:
-								this.push(this.stack[this.frame.slot + this.uLEB()]);
+							{
+								const index = this.frame.slot + this.uLEB();
+								const local = this.stack[index];
+								this.push(local);
 								break;
+							}
 							case op.SET_LOCAL:
 								this.stack[this.frame.slot + this.uLEB()] = this.peek();
 								break;
@@ -2350,6 +2393,12 @@ const Engel = (() =>
 							case op.NULL:
 								this.push(Value(ValueType.NULL, null));
 								break;
+							case op.TRUE:
+								this.push(Value(ValueType.BOOL, true));
+								break;
+							case op.FALSE:
+								this.push(Value(ValueType.BOOL, false));
+								break;
 							case op.POP:
 								this.pop();
 								break;
@@ -2375,6 +2424,19 @@ const Engel = (() =>
 								}
 								break;
 							}
+							case op.OR:
+							{
+								const jump = this.uInt();
+								if (this.isTrue(this.peek().value))
+								{
+									this.frame.ip += jump;
+								}
+								else
+								{
+									this.pop();
+								}
+								break;
+							}
 							case op.DUMP:
 							{
 								alert(JSON.stringify(this.stack));
@@ -2382,9 +2444,10 @@ const Engel = (() =>
 							}
 							case op.CALL:
 							{
+								//alert(JSON.stringify(this.stack));
 								const args = this.uLEB();
 								this.callVal(this.peek(args), args);
-								
+								//alert(this.peek(args - 1).value);
 								break;
 							}
 							case op.CLOSURE:
@@ -2415,13 +2478,12 @@ const Engel = (() =>
 							}
 							case op.RETURN:
 							{
-								
-								console.log(JSON.stringify(this.globals));
 								const val = this.pop();
 								this.closeUpvalues(this.frame.slot);
 								--this.depth;
 								if (this.depth <= 0)
 								{
+									console.log(JSON.stringify(this.globals));
 									return;
 								}
 								this.top = this.frames[this.depth].slot;
@@ -2430,7 +2492,7 @@ const Engel = (() =>
 							}
 							default:
 							{
-								this.error('Unrecognized op.');
+								this.error(`Unrecognized op (${byte})`);
 								return;
 							}
 						}
@@ -2453,6 +2515,82 @@ const Engel = (() =>
 		5 => 6
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
-Engel.run(Engel.compile(`
-let a = 1 < 2 < 3 == 3 < 5
+const prog = (Engel.compile(`
+let foo = (x) -> 1 if x <= 1 else call(x - 2) + call(x - 1)
+let i = 0
+let bar
+while i < 10
+{
+	bar = foo(i)
+	i = i + 1
+}
 `));
+Engel.run(prog);
+const dis = (prog, indent = 0) => {
+	//alert('fpo' + JSON.stringify(prog))
+	let i = 0;
+	const advance = () => prog.chunk.bytes[i++];
+	const uLEB = () =>
+	{
+	   let result = 0;
+	   let shift = 0;
+	   let val;
+	   for (;;)
+	   {
+	      val = advance();
+	      result |= (val & 0x7F) << shift;
+	      if ((val & 0x80) == 0)
+	      {
+	         break;
+	      }
+	      shift += 7;
+	   }
+	   return result;
+	};
+	const uInt = () =>
+	{
+	   return (
+	      (advance() << 24) |
+	      (advance() << 16) |
+	      (advance() << 8) |
+	      (advance()));
+	};
+	const {op} = Engel;
+	for (;;)
+	{
+		if (i >= prog.chunk.bytes.length - 1)
+		{
+			break;
+		}
+		let result = `${i}\t`;
+		for (let i = 0; i < indent; ++i)
+		{
+			result += '\t';
+		}
+		const byte = advance();
+		result += Engel.op[byte];
+		switch (byte)
+		{
+			case op.GET_LOCAL:
+				result += ' ' + uLEB();
+				break;
+			case op.CONST:
+			case op.GET_GLOBAL:
+			{
+				const x = uLEB()
+				result += ` ${x} (${prog.chunk.consts[x].value})`;
+				break;
+			}
+			case op.AND:
+			case op.JMP:
+				result += ' ' + uInt();
+				break;
+		}
+		console.log(result);
+		if (byte === Engel.op.CLOSURE)
+		{
+			dis(prog.chunk.consts[uLEB()].value, indent + 1);
+		}
+	}
+};
+dis(prog);
