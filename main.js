@@ -23,8 +23,7 @@ const Engel = (() =>
 		const Native = (names, value) => ({ value, names });
 		const libs = {
 			'io': [
-				Native(
-				{
+				Native({
 					'en': 'print',
 					'es': 'imprime',
 					'fr': 'imprimez',
@@ -38,14 +37,56 @@ const Engel = (() =>
 				   }
 				   return Value(ValueType.NULL);
 				})),
-			],	
+			],
+			'kronos': [
+				Native({
+						'en': 'clock',
+						'es': 'metra',
+						'fr': 'pointez',
+						'de': 'stoppen',
+					},
+					(() =>
+					{
+						//const clock = new Date();
+						return Native(ValueType.NATIVE, (vm, args) =>
+						{
+							return Value(ValueType.INT, Date.now());
+						})
+					})()),
+			],
 			// Just going to claim these libraries:
-				'gles20': [],
-				'gles30': [],
-				'canvas': [],
-				'math':   [],
-				'game':   [],
-				'json':   [],
+			'gles20': [
+			],
+			'gles30': [],
+			'canvas': [],
+			'math':   [
+				Native({
+					'en': 'PI',
+					'es': 'PI',
+					'fr': 'PI',
+					'de': 'PI',
+				},
+				Value(ValueType.REAL, Math.PI)),
+				Native({
+					'en': 'hypot',
+					'es': 'hipot',
+					'fr': 'hypot',
+					'de': 'hypot',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					if (args.length !== 2)
+					{
+						return null;
+					}
+					const x = vm.peek(1);
+					const y = vm.peek(0);
+					return Value(ValueType.REAL, (x ** 2 + y ** 2) ** 0.5);
+				})),
+			],
+			'game':   [
+			],
+			'json':   [],
 		};
 		const result = {};
 		const langs = [
@@ -101,7 +142,7 @@ const Engel = (() =>
 		'ARRAY',     'HASH',       'DUMP',
 		'SUBSCRIPT', 'OBJ',        'GET_PROP',
 		'SET_PROP',  'SET_SUBSET', 'METHOD',
-		'RETURN');
+		'TO_STR',    'CONCAT',     'RETURN');
 	
 	const compile = (() =>
 	{
@@ -1706,6 +1747,23 @@ const Engel = (() =>
 						case NodeType.STRING:
 							this.emitConst(node.value, ValueType.STRING)
 							break;
+						case NodeType.INTERP:
+						{
+							for (let i = 0; i < node.interps.length; ++i)
+							{
+								const interp = node.interps[i];
+								if (i > 0)
+								{
+									this.emit(op.CONCAT);
+								}
+								this.emitConst(interp.chars, ValueType.STRING);
+								this.visit(interp.value);
+								this.emit(op.TO_STR, op.CONCAT);
+							}
+							this.emitConst(node.terminator, ValueType.STRING);
+							this.emit(op.CONCAT);
+							break;
+						}
 						case NodeType.NULL:
 							this.emit(op.NULL);
 							break;
@@ -1929,7 +1987,7 @@ const Engel = (() =>
 						case NodeType.OR:
 						{
 							this.visit(node.left);
-							this.emit(op.OR);
+							this.emit(op.OR); 
 							const jump = this.saveSpot();
 							this.emit(...this.uInt());
 							this.visit(node.right);
@@ -2484,6 +2542,9 @@ const Engel = (() =>
 					{
 						case ValueType.STRING:
 							return value.value;
+						case ValueType.INT:
+						case ValueType.REAL:
+							return value.value.toString();
 					}
 					return '';
 				},
@@ -2781,6 +2842,13 @@ const Engel = (() =>
 							case op.EXP:
 								numOp((a, b) => a ** b);
 								break;
+							case op.TO_STR:
+								this.push(Value(ValueType.STRING, this.toStr(this.pop())));
+								break;
+							case op.CONCAT:
+								//alert(this.peek(0).value);
+								binary((a, b) => Value(ValueType.STRING, a + b));
+								break;
 							case op.NULL:
 								this.push(Value(ValueType.NULL, null));
 								break;
@@ -2919,7 +2987,15 @@ const Engel = (() =>
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
 const prog = (Engel.compile(`
 import io
-io.print('Am I alive?')
+import kronos
+let time = kronos.clock()
+let i = 0
+dec fib = (x) -> 1 if x <= 1 else call(x - 2) + call(x - 1)
+while i < 20 {
+	io.print(fib(i))
+	i = i + 1
+}
+io.print('that took #{(kronos.clock() - time) / 1000 } seconds.')
 `));
 Engel.run(prog, 'en');
 const dis = (prog, indent = 0) => {
