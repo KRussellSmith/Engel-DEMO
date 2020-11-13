@@ -9,25 +9,75 @@ const Engel = (() =>
 		}
 		return result;
 	};
-	const NativeLibs = {
-		'std': // My all-time favorite library name.
-		{
-			'print': (vm, args) =>
-			{
-				for (let i = vm.top - 1; i >= vm.top - args; --i)
+	const ValueType = Enum(
+	   'INT', 'REAL', 'STRING',
+	   'FUNC', 'NULL', 'BOOL',
+	   'HASH', 'ARRAY', 'OBJ',
+	   'METHOD');
+	const Value = (type, value = null) => ({
+	   type,
+	   value,
+	});
+	const NativeLibs = (() =>
+	{
+		const Native = (names, value) => ({ value, names });
+		const libs = {
+			'io': [
+				Native(
 				{
-					console.log(vm.stack[i]);
+					'en': 'print',
+					'es': 'imprime',
+					'fr': 'imprimez',
+					'de': 'drucken',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+				   for (let i = vm.top - 1; i >= vm.top - args; --i)
+				   {
+				      console.log(vm.toStr(vm.stack[i]));
+				   }
+				   return Value(ValueType.NULL);
+				})),
+			],	
+			// Just going to claim these libraries:
+				'gles20': [],
+				'gles30': [],
+				'canvas': [],
+				'math':   [],
+				'game':   [],
+				'json':   [],
+		};
+		const result = {};
+		const langs = [
+			'en',
+			'es',
+			'fr',
+			'de',
+		];
+		for (const key in libs)
+		{
+			result[key] = {}
+			for (const lang of langs)
+			{
+				result[key]['.' + lang] = {};
+			}
+		}
+		for (const key in libs)
+		{
+			for (const native of libs[key])
+			{
+				for (const lang of langs)
+				{
+					if (lang in native.names)
+					{
+						result[key]['.' + lang][native.names[lang]] = native.value;
+					}
 				}
-			},
-		},
-		// Just going to claim these libraries:
-		'gles20': {},
-		'gles30': {},
-		'canvas': {},
-		'math':   {},
-		'game':   {},
-		'json':   {},
-	}
+				result[key][native.names['en']] = native.value;
+			}
+		}
+		return result;
+	})();
 	const op = Enum(
 		'ADD',       'SUB',        'MUL',
 		'DIV',       'EXP',        'LOAD',
@@ -48,16 +98,11 @@ const Engel = (() =>
 		'DEF_CONST', 'GET_GLOBAL', 'CLOSE',
 		'GET_UPVAL', 'SET_UPVAL',  'GOTO',
 		'ROT2',      'ROT3',       'ROT4',
-		'DUMP',      'RETURN');
+		'ARRAY',     'HASH',       'DUMP',
+		'SUBSCRIPT', 'OBJ',        'GET_PROP',
+		'SET_PROP',  'SET_SUBSET', 'METHOD',
+		'RETURN');
 	
-	const ValueType = Enum(
-		'INT',  'REAL',  'STRING',
-		'FUNC', 'NULL',  'BOOL',
-		'HASH', 'ARRAY', 'OBJ');
-	const Value = (type, value) => ({
-		type,
-		value,
-	});
 	const compile = (() =>
 	{
 		const TokenType = Enum(
@@ -82,7 +127,7 @@ const Engel = (() =>
 			'RETURN',    'LET',        'DEC',
 			'FUNC',      'HASH_START', 'OBJ_START',
 			'FAT_ARROW', 'IMPORT',     'ERROR',
-			'FIN');
+			'DOT',       'QUESTION',   'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -420,6 +465,12 @@ const Engel = (() =>
 							return Token(TokenType.ENDL, this);
 						case ',':
 							return Token(TokenType.COMMA, this);
+						case ':':
+							return Token(TokenType.COLON, this);
+						case '.':
+							return Token(TokenType.DOT, this);
+						case '?':
+							return Token(TokenType.QUESTION, this);
 						case '{':
 							if (this.interps.length >= 0)
 							{
@@ -497,17 +548,18 @@ const Engel = (() =>
 			'REAL',       'INT',           'GET',
 			'ENDL',       'LPAREN',        'RPAREN',
 			'TRUE',       'FALSE',         'AND',
-			'OR',         'ELSE',
+			'OR',         'ELSE',          
 			'IF',         'SET',           'LBRACE',
 			'RBRACE',     'COMP',          'NOT',
-			'NULL',       'FOR',
+			'NULL',       'FOR',           
 			'WHILE',      'BREAK',         'CONTINUE',
 			'THIS',       'CALL',          'MATCH',
 			'RETURN',     'DECLARE',       'BLOCK',
 			'FUNC_BLOCK', 'FUNC',          'HASH',
 			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
 			'OBJ',        'EXPR',          'FUNC_CALL',
-			'IMPORT',     'FIN');
+			'ARRAY',      'IMPORT',        'GET_PROP',
+			'SET_PROP',   'FIN');
 		const Node = (() =>
 		{
 			const base = (type, line = 0) => ({
@@ -592,6 +644,35 @@ const Engel = (() =>
 				Comparisons: (primer, list, line) => ({
 					...base(NodeType.COMP, line),
 					primer, list,
+				}),
+				Array: (list, line) => ({
+					...base(NodeType.ARRAY, line),
+					list,
+				}),
+				HashPair: (key, value) => ({
+					key, value,
+				}),
+				Hash: (list, line) => ({
+					...base(NodeType.HASH, line),
+					list,
+				}),
+				Field: (name = '', value) => ({
+					name, value,
+				}),
+				Method: (name = '', args = [], body) => ({
+					name, args, body,
+				}),
+				Obj: (fields = [], methods = [], line = 0) => ({
+					...base(NodeType.OBJ, line),
+					fields, methods,
+				}),
+				GetProp: (obj, name = '', line = 0) => ({
+					...base(NodeType.GET_PROP, line),
+					obj, name,
+				}),
+				SetProp: (obj, name = '', value, line = 0) => ({
+					...base(NodeType.SET_PROP, line),
+					obj, name, value,
 				}),
 			}
 		})();
@@ -703,7 +784,18 @@ const Engel = (() =>
 						{
 							const subscript = this.expression();
 							this.eat(TokenType.RBRACK, 'Unclosed subscription.');
-							result = Node.Binary(NodeType.SUBSCRIPT, result, subscript, this.last.line);
+							result = Node.Binary(NodeType.SUBSCRIPT, result, subscript, this.prev.line);
+						}
+						else if (this.taste(TokenType.DOT))
+						{
+							this.eat(TokenType.ID, 'Expected identifier.');
+							const name = this.prev.value;
+							result = Node.GetProp(result, name, this.prev.line);
+						}
+						else if (this.taste(TokenType.QUESTION))
+						{
+							const call = this.callTo(result);
+							result = Node.Binary(NodeType.OPTIONAL, result, call, this.prev.line);
 						}
 						else
 						{
@@ -846,6 +938,94 @@ const Engel = (() =>
 							
 							this.eat(TokenType.RBRACK, 'Expected closing bracket to array.');
 							result = Node.Array(elements, this.prev.line);
+						}
+					}
+					else if (this.taste(TokenType.HASH_START))
+					{
+						const elements = [];
+						this.skipBreaks();
+						if (this.taste(TokenType.RBRACK))
+						{
+							result = Node.Hash(elements, this.prev.line);
+						}
+						else
+						{
+							do
+							{
+								this.skipBreaks();
+								if (this.sniff(TokenType.RBRACK))
+								{
+									break;
+								}
+								const key = this.expression();
+								this.skipBreaks();
+								this.eat(TokenType.COLON, 'Expected colon (:).');
+								this.skipBreaks();
+								const value = this.expression();
+								elements.push(Node.HashPair(key, value))
+							} while (this.taste(TokenType.COMMA));
+							
+							this.eat(TokenType.RBRACK, 'Expected closing bracket to hashmap.');
+							result = Node.Hash(elements, this.prev.line);
+						}
+					}
+					else if (this.taste(TokenType.OBJ_START))
+					{
+						const fields  = [];
+						const methods = [];
+						this.skipBreaks();
+						if (this.taste(TokenType.RBRACK))
+						{
+							result = Node.Hash(elements, this.prev.line);
+						}
+						else
+						{
+							for (;;)
+							{
+								this.skipBreaks();
+								if (this.sniff(TokenType.FIN))
+								{
+									this.error(start, 'Unclosed object.');
+									break;
+								}
+								if (this.taste(TokenType.RBRACE))
+								{
+									break;
+								}
+								this.eat(TokenType.ID, 'Expected identifier or closing brace.');
+								const name = this.prev.value;
+								this.skipBreaks();
+								if (this.taste(TokenType.SET))
+								{
+									this.skipBreaks();
+									fields.push(Node.Field(name, this.expression()));
+								}
+								else if (this.taste(TokenType.LPAREN))
+								{
+									const args = [];
+									this.skipBreaks();
+									if (!this.taste(TokenType.RPAREN))
+									{
+										do
+										{
+											this.skipBreaks();
+											args.push(this.expression());
+											this.skipBreaks();
+										} while (this.taste(TokenType.COMMA));
+										this.eat(TokenType.RPAREN, 'Expected closing parenthensis.');
+									}
+									this.eat(TokenType.FUNC, 'Expected skinny arrow (->)');
+									this.skipBreaks();
+									const body = this.funcBody();
+									methods.push(Node.Method(name, args, body, this.prev.line));
+								}
+								else
+								{
+									this.error('Invalid object statement.');
+									break;
+								}
+							}
+							result = Node.Obj(fields, methods, this.prev.line);
 						}
 					}
 					else if (this.taste(TokenType.MATCH))
@@ -1045,31 +1225,7 @@ const Engel = (() =>
 						return Node.Comparisons(expr, list, this.prev.line)
 					}
 				   return expr;
-				},/*
-				equality()
-				{
-					let result = this.comparision();
-					while (
-					this.taste(TokenType.EQUIV) ||
-					this.taste(TokenType.NOT_EQUIV))
-					{
-						const token = this.prev;
-						this.skipBreaks();
-						const right = this.comparision();
-						let type = null;
-						switch (token.type)
-						{
-							case TokenType.EQUIV:
-								type = NodeType.EQUIV;
-								break;
-							case TokenType.NOT_EQUIV:
-								type = NodeType.NOT_EQUIV;
-								break;
-						}
-						result = Node.Binary(type, result, right);
-					}
-					return result;
-				},*/
+				},
 				and()
 				{
 					let result = this.comparision();
@@ -1290,7 +1446,9 @@ const Engel = (() =>
 					}
 					else if (this.taste(TokenType.IMPORT))
 					{
-						return Node.Unary(NodeType.IMPORT, this.factor());
+						this.skipBreaks();
+						this.eat(TokenType.ID, 'Expected identifier.');
+						return Node.Unary(NodeType.IMPORT, this.prev.value, this.prev.line);
 					}
 					return this.statement();
 				},
@@ -1642,19 +1800,17 @@ const Engel = (() =>
 									}
 								}
 								// The result of these operations is going to be on top,
-								// So this will switch it with 
+								// So this will switch it with the second-place value, then pop that:
 								for (const jump of jumps)
 								{
 									this.jump(jump);
 								}
 								this.emit(op.ROT2, op.POP);
-								//this.emit(op.POP, op.ROT2, op.POP);
 							}
 							break;
 						}
 						case NodeType.IF:
 						{
-							//alert(JSON.stringify(node));
 							this.visit(node.condition);
 							
 							this.emit(op.AND);
@@ -1772,7 +1928,6 @@ const Engel = (() =>
 						}
 						case NodeType.OR:
 						{
-							//alert(JSON.stringify(node))
 							this.visit(node.left);
 							this.emit(op.OR);
 							const jump = this.saveSpot();
@@ -1783,6 +1938,72 @@ const Engel = (() =>
 						}
 						case NodeType.MATCH:
 						{
+							break;
+						}
+						case NodeType.ARRAY:
+						{
+							for (const child of node.list)
+							{
+								this.visit(child);
+							}
+							this.emit(op.ARRAY, ...this.uLEB(node.list.length));
+							break;
+						}
+						case NodeType.HASH:
+						{
+							for (const pair of node.list)
+							{
+								this.visit(pair.key);
+								this.visit(pair.value);
+							}
+							this.emit(op.HASH, ...this.uLEB(node.list.length));
+							break;
+						}
+						case NodeType.OBJ:
+						{
+							for (const field of node.fields)
+							{
+								this.emitConst(field.name, ValueType.STRING);
+								this.visit(field.value);
+							}
+							for (const method of node.methods)
+							{
+								this.emitConst(method.name, ValueType.STRING);
+								this.curr = CompilerScope(this.curr);
+								this.beginScope();
+								this.addLocal('call', true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								for (const arg of method.args)
+								{
+								   if (arg.type != NodeType.GET)
+								   {
+								      this.error('Invalid expression for function parameter.');
+								   }
+								   this.addLocal(arg.name, false, true);
+								   this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								}
+								this.addLocal('this', true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								this.visit(method.body);
+								this.endScope();
+								const upvalues = this.curr.upvalues;
+								const result = this.endCompilerScope();
+								if (node.name !== null)
+								{
+								   result.name = node.name;
+								}
+								this.emitClosure(result);
+								for (const upvalue of upvalues)
+								{
+								   this.emit(
+								      upvalue.isLocal ? 1 : 0,
+								      ...this.uLEB(upvalue.index));
+								}
+								this.emit(op.METHOD);
+							}
+							this.emit(
+								op.OBJ,
+								...this.uLEB(node.methods.length + node.fields.length));
 							break;
 						}
 						case NodeType.BLOCK:
@@ -1917,6 +2138,13 @@ const Engel = (() =>
 							}
 							break;
 						}
+						case NodeType.GET_PROP:
+						{
+							this.visit(node.obj);
+							this.emitConst(node.name, ValueType.STRING);
+							this.emit(op.GET_PROP);
+							break;
+						}
 						case NodeType.FUNC_BLOCK:
 						{
 							for (const child of node.nodes)
@@ -1974,9 +2202,15 @@ const Engel = (() =>
 								...this.uLEB(node.args.length));
 							break;
 						}
+						case NodeType.SUBSCRIPT:
+						{
+							this.visitBinary(node, op.SUBSCRIPT);
+							break;
+						}
 						case NodeType.IMPORT:
 						{
-							this.visitUnary(node, op.IMPORT);
+							this.emitConst(node.value, ValueType.STRING);
+							this.emit(op.IMPORT);
 							break;
 						}
 					}
@@ -2014,9 +2248,17 @@ const Engel = (() =>
 			const Upvalue = (value) =>
 			({
 				value,
-				next: null,
+				next:   null,
 				closed: null
-			})
+			});
+			const Method = (func, obj = null) =>
+			({
+				obj, func,
+			});
+			const Obj = (fields = {}, methods = {}) =>
+			({
+				fields, methods,
+			});
 			const putOrPush = (array = [], index = 0, value = null) =>
 			{
 				if (index >= array.length)
@@ -2107,9 +2349,16 @@ const Engel = (() =>
 						{
 							return this.call(val.value, args);
 						}
+						case ValueType.METHOD:
+						{
+							const method = val.value;
+							this.push(method.obj)
+							this.frames[this.depth++] = Frame(method.func, this.top - args - 2);
+							return true;
+						}
 						case ValueType.NATIVE:
 						{
-							const result = val.value(this.top - args, args);
+							const result = val.value(this, args);
 							this.top -= args + 1;
 							this.push(result);
 							return true;
@@ -2191,7 +2440,54 @@ const Engel = (() =>
 					}
 					return a.value === b.value;
 				},
-				interpret()
+				subscript()
+				{
+					const value = this.peek(1).value;
+					const key   = this.peek(0);
+					switch (value.type)
+					{
+						case ValueType.STRING:
+						case ValueType.ARRAY:
+						{
+							if (key.type === ValueType.INT)
+							{
+								const index = key.value;
+								if (index < 0 || index >= key.length)
+								{
+									this.error(`Value ${index} outside of subscriptable range.`);
+									return null;
+								}
+								return value[key.value];
+							}
+							this.error(`Can only subscript value of type ${value.type} with an integer.`);
+							return null;
+						}
+						case ValueType.HASHMAP:
+						{
+							if (!(key.value in value))
+							{
+								this.error(`No key '${this.str(key)} in map.`);
+								return null;
+							}
+							return value[key.value];
+						}
+						default:
+						{
+							this.error(`Value of type ${value.type} not subscriptable.`);
+							return null;
+						}
+					}
+				},
+				toStr(value)
+				{
+					switch (value.type)
+					{
+						case ValueType.STRING:
+							return value.value;
+					}
+					return '';
+				},
+				interpret(lang)
 				{
 					this.addFrame(Frame(chunk));
 					const binary = (func) =>
@@ -2224,6 +2520,19 @@ const Engel = (() =>
 						}
 						switch (byte)
 						{
+							case op.IMPORT:
+							{
+								
+								const lib = this.pop().value;
+								if (lib in NativeLibs)
+								{
+									this.globals[lib] = {
+										value: Value(ValueType.OBJ, Obj(NativeLibs[lib]['.' + lang]), {}),
+										isConst: true,
+									};
+								}
+								break;
+							}
 							case op.DUP:
 								this.push(this.peek());
 								break;
@@ -2260,9 +2569,91 @@ const Engel = (() =>
 								this.put(3, first);
 								break;
 							}
+							case op.ARRAY:
+							{
+								const len = this.uLEB();
+								const result = Value(ValueType.ARRAY, this.stack.slice(this.top - len, len));
+								this.top -= len;
+								this.push(result);
+								break;
+							}
+							case op.HASH:
+							{
+								const len = this.uLEB();
+								const map = {};
+								for (let i = 0; i < len; ++i)
+								{
+									const key   = this.stack[this.top - 1 - i * 2 - 1].value;
+									const value = this.stack[this.top - 1 - i * 2];
+									map[key] = value;
+								}
+								const result = Value(ValueType.HASHMAP, map);
+								this.top -= len * 2;
+								this.push(result);
+								break;
+							}
+							case op.METHOD: // For some strange reason, I did not truncate this opcode's name.
+							{
+								const func = this.pop().value;
+								
+								this.push(Value(ValueType.METHOD, Method(func)));
+								break;
+							}
+							case op.OBJ:
+							{
+								const len = this.uLEB();
+								alert(len)
+								const fields = {};
+								const methods = {};
+								for (let i = 0; i < len; ++i)
+								{
+									const key = this.stack[this.top - 1 - i * 2 - 1].value;
+									const value = this.stack[this.top - 1 - i * 2];
+									if (value.type === ValueType.METHOD)
+									{
+										methods[key] = value;
+									}
+									else
+									{
+										fields[key] = value;
+									}
+								}
+								const result = Value(ValueType.OBJ, Obj(fields, methods));
+								for (const key in methods)
+								{
+									methods[key].value.obj = result;
+								}
+								this.top -= len * 2;
+								this.push(result);
+								break;
+							}
 							case op.CONST:
 								this.push(this.getConst());
 								break;
+							case op.GET_PROP:
+							{
+								const key = this.pop().value;
+								if (this.peek(0).type !== ValueType.OBJ)
+								{
+									this.error(`Cannot read property on type ${this.pop().type}.`);
+									return;
+								}
+								const map = this.pop().value;
+								if (key in map.fields)
+								{
+									this.push(map.fields[key]);
+								}
+								else if (key in map.methods)
+								{
+									this.push(map.methods[key]);
+								}
+								else
+								{
+									this.error(`Property ${key} is undefined.`);
+									return;
+								}
+								break;
+							}
 							case op.GET_GLOBAL:
 							{
 								const name = this.getConst().value;
@@ -2444,10 +2835,21 @@ const Engel = (() =>
 							}
 							case op.CALL:
 							{
-								//alert(JSON.stringify(this.stack));
 								const args = this.uLEB();
 								this.callVal(this.peek(args), args);
-								//alert(this.peek(args - 1).value);
+								break;
+							}
+							case op.SUBSCRIPT:
+							{
+								const value = this.subscript()
+								if (value !== null)
+								{
+									this.push(this.subscript());
+								}
+								else
+								{
+									return;
+								}
 								break;
 							}
 							case op.CLOSURE:
@@ -2483,7 +2885,6 @@ const Engel = (() =>
 								--this.depth;
 								if (this.depth <= 0)
 								{
-									console.log(JSON.stringify(this.globals));
 									return;
 								}
 								this.top = this.frames[this.depth].slot;
@@ -2499,11 +2900,12 @@ const Engel = (() =>
 					}
 				},
 			};
-			return () => Interpreter.interpret.call(Interpreter);
+			return (lang) => Interpreter.interpret.call(Interpreter, lang);
 		};
-		return chunk => interpreter(chunk)();
+		return (chunk, lang) => interpreter(chunk)(lang);
 	})();
 	return {
+		lang: 'en',
 		compile, run, op
 	};
 })();
@@ -2516,18 +2918,11 @@ const Engel = (() =>
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
 const prog = (Engel.compile(`
-let foo = (x) -> 1 if x <= 1 else call(x - 2) + call(x - 1)
-let i = 0
-let bar
-while i < 10
-{
-	bar = foo(i)
-	i = i + 1
-}
+import io
+io.print('Am I alive?')
 `));
-Engel.run(prog);
+Engel.run(prog, 'en');
 const dis = (prog, indent = 0) => {
-	//alert('fpo' + JSON.stringify(prog))
 	let i = 0;
 	const advance = () => prog.chunk.bytes[i++];
 	const uLEB = () =>
@@ -2576,6 +2971,7 @@ const dis = (prog, indent = 0) => {
 				break;
 			case op.CONST:
 			case op.GET_GLOBAL:
+			case op.SET_GLOBAL:
 			{
 				const x = uLEB()
 				result += ` ${x} (${prog.chunk.consts[x].value})`;
@@ -2593,4 +2989,4 @@ const dis = (prog, indent = 0) => {
 		}
 	}
 };
-dis(prog);
+//dis(prog);
