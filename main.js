@@ -20,8 +20,79 @@ const Engel = (() =>
 	});
 	const NativeLibs = (() =>
 	{
+		const NULL = Value(ValueType.NULL, null);
 		const Native = (names, value) => ({ value, names });
 		const libs = {
+			'.include': [
+				Native({
+					'en': 'int',
+					'es': 'ent',
+					'fr': 'ent',
+					'de': 'ganz',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					if (args === 0)
+					{
+						return NULL;
+					}
+					const val = vm.stack[vm.top - args];
+					switch (val.type)
+					{
+						case ValueType.INT:
+							return val;
+						case ValueType.REAL:
+							return Value(ValueType.INT, val.value | 0);
+						case ValueType.STRING:
+						{
+							const toInt = parseInt(val.value);
+							if (Number.isNaN(toInt))
+							{
+								return NULK;
+							}
+							return Value(ValueType.INT, toInt)
+						}
+						case ValueType.BOOL:
+						{
+							return Value(ValueType.INT, val.value ? 1 : 0);
+						}
+					}
+				})),
+				Native({
+					'en': 'real',
+					'es': 'real',
+					'fr': 'réel',
+					'de': 'echte',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					if (args === 0)
+					{
+						return NULL;
+					}
+					const val = vm.stack[vm.top - args];
+					switch (val.type)
+					{
+						case ValueType.REAL:
+							return val;
+						case ValueType.INT:
+							return Value(ValueType.REAL, val.value);
+						case ValueType.STRING:
+						{
+							const toInt = parseFloat(val.value);
+							if (Number.isNaN(toInt))
+							{
+								return NULK;
+							}
+							return Value(ValueType.REAL, toInt)
+						}
+						case ValueType.BOOL:
+						{
+							return Value(ValueType.REAL, val.value ? 1 : 0);
+						}
+					}
+				})),
+			],
 			'io': [
 				Native({
 					'en': 'print',
@@ -35,7 +106,7 @@ const Engel = (() =>
 				   {
 				      console.log(vm.toStr(vm.stack[i]));
 				   }
-				   return Value(ValueType.NULL);
+				   return NULL;
 				})),
 			],
 			'kronos': [
@@ -168,11 +239,12 @@ const Engel = (() =>
 			'RETURN',    'LET',        'DEC',
 			'FUNC',      'HASH_START', 'OBJ_START',
 			'FAT_ARROW', 'IMPORT',     'ERROR',
-			'DOT',       'QUESTION',   'FIN');
+			'DOT',       'QUESTION',   'IN',
+			'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
-		   col: lexer.col,
+		   column: lexer.col,
 		   value: value === null ? lexer.source.substring(lexer.start, lexer.curr) : value,
 		   str()
 		   {
@@ -197,6 +269,7 @@ const Engel = (() =>
 				'let':    TokenType.LET,
 				'dec':    TokenType.DEC,
 				'import': TokenType.IMPORT,
+				'in':     TokenType.IN,
 			};
 			const Lexer = {
 				source,
@@ -686,14 +759,14 @@ const Engel = (() =>
 					...base(NodeType.COMP, line),
 					primer, list,
 				}),
-				Array: (list, line) => ({
+				Array: (list, line = 0) => ({
 					...base(NodeType.ARRAY, line),
 					list,
 				}),
 				HashPair: (key, value) => ({
 					key, value,
 				}),
-				Hash: (list, line) => ({
+				Hash: (list, line = 0) => ({
 					...base(NodeType.HASH, line),
 					list,
 				}),
@@ -714,6 +787,10 @@ const Engel = (() =>
 				SetProp: (obj, name = '', value, line = 0) => ({
 					...base(NodeType.SET_PROP, line),
 					obj, name, value,
+				}),
+				For: (local = '', mutable = false, value = null, body = null, line = 0) => ({
+					...base(NodeType.FOR, line),
+					local, value, body, mutable,
 				}),
 			}
 		})();
@@ -2296,7 +2373,7 @@ const Engel = (() =>
 	})();
 	const run = (() =>
 	{
-		const interpreter = chunk =>
+		const interpreter = (chunk, lang) =>
 		{
 			const Frame = (func, slot = 0) => ({
 				func,
@@ -2329,13 +2406,18 @@ const Engel = (() =>
 				}
 				return value;
 			}
+			const Global = (value, isConst = true) => ({
+				value, isConst,
+			})
 			const Interpreter = {
-				stack:   [],
-				globals: {},
-				frames: new Array(64),
-				depth:   0,
-				top:     0,
+				stack:        [],
+				globals:      {},
+				frames:       new Array(64),
+				depth:        0,
+				top:          0,
 				openUpvalues: null,
+				currError:     null,
+				lang,
 				addFrame(frame)
 				{
 					this.frames[this.depth++] = frame;
@@ -2392,7 +2474,7 @@ const Engel = (() =>
 				},
 				error(message = '')
 				{
-					console.log(message);
+					this.currError = message;
 				},
 				call(func, args)
 				{
@@ -2440,7 +2522,7 @@ const Engel = (() =>
 					
 					while (upvalue !== null && upvalue.location > local)
 					{
-					prev = upvalue;
+						prev = upvalue;
 						upvalue = upvalue.next;
 					}
 					if (upvalue !== null && upvalue.location === local)
@@ -2513,26 +2595,26 @@ const Engel = (() =>
 								if (index < 0 || index >= key.length)
 								{
 									this.error(`Value ${index} outside of subscriptable range.`);
-									return null;
+									return NULL;
 								}
 								return value[key.value];
 							}
 							this.error(`Can only subscript value of type ${value.type} with an integer.`);
-							return null;
+							return NULL;
 						}
 						case ValueType.HASHMAP:
 						{
 							if (!(key.value in value))
 							{
 								this.error(`No key '${this.str(key)} in map.`);
-								return null;
+								return NULL;
 							}
 							return value[key.value];
 						}
 						default:
 						{
 							this.error(`Value of type ${value.type} not subscriptable.`);
-							return null;
+							return NULL;
 						}
 					}
 				},
@@ -2548,8 +2630,26 @@ const Engel = (() =>
 					}
 					return '';
 				},
-				interpret(lang)
+				typeName(val)
 				{
+					return {
+						[ValueType.INT]:      'int',
+						[ValueType.REAL]:     'real',
+						[ValueType.STRING]:   'string',
+						[ValueType.FUNCTION]: 'function',
+					}[val.type];
+				},
+				importNative(lib = '')
+				{
+					if (lib in NativeLibs)
+					{
+						return NativeLibs[lib]['.' + this.lang];
+					}
+					this.error(`Library '${lib}' not found.`);
+				},
+				interpret()
+				{
+					const NULL = Value(ValueType.NULL, null);
 					this.addFrame(Frame(chunk));
 					const binary = (func) =>
 					{
@@ -2557,20 +2657,66 @@ const Engel = (() =>
 						const a = this.pop();
 						this.push(func(a.value, b.value));
 					};
-					const numOp = (func) =>
+					const numOp = (func, name = '') =>
 					{
-						let type = (
-							this.peek(0).type === ValueType.INT &&
-							this.peek(0).type === this.peek(1).type)
-							? ValueType.INT : ValueType.REAL;
-						binary((a, b) => Value(type, func(a, b)));
+						if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
+						{
+							this.error(`${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`);
+							this.pop();
+							this.pop();
+							this.push(NULL);
+						}
+						else
+						{
+							let type = (
+								this.peek(0).type === ValueType.INT &&
+								this.peek(0).type === this.peek(1).type)
+								? ValueType.INT : ValueType.REAL;
+							if (type === ValueType.INT)
+							{
+								binary((a, b) => Value(type, func(a, b) | 0));
+							}
+							else
+							{
+								binary((a, b) => Value(type, func(a, b)));
+							}
+						}
 					};
+					const intOp = (func, name = '') =>
+					{
+						if (this.peek(0).type !== ValueType.INT || this.peek(1).valueType !== INT)
+						{
+							this.error(`${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`);
+							this.pop();
+							this.pop();
+							this.push(NULL)
+						}
+						else
+						{
+							binary((a, b) => Value(ValueType.INT, func(a, b) | 0));
+						}
+					}
 					const compOp = (func) =>
 					{
-						binary((a, b) => Value(ValueType.BOOL, func(a, b)));
+						if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
+						{
+							
+							this.error(`Expected numeric values for comparision, got ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`);
+							this.pop();
+							this.pop();
+							this.push(NULL);
+						}
+						else
+						{
+							binary((a, b) => Value(ValueType.BOOL, func(a, b)));
+						}
 					};
 					let byte;
-					
+					const _include = this.importNative('.include');
+					for (const key in _include)
+					{
+						this.globals[key] = Global(_include[key], true);
+					}
 					for (;;)
 					{
 						byte = this.advance();
@@ -2579,19 +2725,20 @@ const Engel = (() =>
 							this.error('Stack exceeded.');
 							return;
 						}
+						if (this.currError !== null)
+						{
+							throw(Error(this.currError));
+							break;
+						}
 						switch (byte)
 						{
 							case op.IMPORT:
 							{
-								
-								const lib = this.pop().value;
-								if (lib in NativeLibs)
-								{
-									this.globals[lib] = {
-										value: Value(ValueType.OBJ, Obj(NativeLibs[lib]['.' + lang]), {}),
-										isConst: true,
-									};
-								}
+								const name = this.pop().value;
+								const lib = this.importNative(name);
+								this.globals[name] = Global(
+									Value(ValueType.OBJ, Obj(lib, {})),
+									true);
 								break;
 							}
 							case op.DUP:
@@ -2711,7 +2858,7 @@ const Engel = (() =>
 								else
 								{
 									this.error(`Property ${key} is undefined.`);
-									return;
+									this.push(NULL);
 								}
 								break;
 							}
@@ -2721,20 +2868,20 @@ const Engel = (() =>
 								if (!(name in this.globals))
 								{
 									this.error(`${name} is undefined.`);
-									return;
+									this.push(NULL);
 								}
-								this.push(this.globals[name].value);
+								else this.push(this.globals[name].value);
 								break;
 							}
 							case op.SET_GLOBAL:
 							{
 								const name = this.getConst().value;
+								const val = this.pop();
 								if (!(name in this.globals))
 								{
 									this.error(`${name} is undefined.`);
-									return;
 								}
-								this.globals[name].value = this.pop();
+								else this.globals[name].value = val;
 								break;
 							}
 							case op.LT:
@@ -2785,12 +2932,12 @@ const Engel = (() =>
 									if (name in this.globals)
 									{
 										this.error(`${name} already declared.`);
-										return;
+										this.pop();
 									}
-									this.globals[name] = {
-										value: this.pop(),
-										isConst: false,
-									};
+									else
+									{
+										this.globals[name] = Global(this.pop(), false);
+									}
 								break;
 							}
 							case op.DEF_CONST:
@@ -2799,18 +2946,46 @@ const Engel = (() =>
 								if (name in this.globals)
 								{
 									this.error(`${name} already declared.`);
-									return;
+									this.pop();
 								}
-								this.globals[name] = {
-									value: this.pop(),
-									isConst: true,
-								};
+								else
+								{
+									this.globals[name] = Global(this.pop(), true);
+								}
 								break;
 							}
 							case op.GET_UPVAL:
 							{
 								const index = this.uLEB();
 								this.push(this.stack[this.frame.slot + index]);
+								break;
+							}
+							case op.NEG:
+							{
+								const val = this.pop();
+								if (!this.isNum(val))
+								{
+									this.error(`Cannot negate value of type ${this.typeName(val.type)}.`);
+									this.push(NULL);
+								}
+								else
+								{
+									this.push(Value(val.type, -val.value));
+								}
+								break;
+							}
+							case op.BNOT:
+							{
+								const val = this.pop();
+								if (!this.isNum(val))
+								{
+									this.error(`Cannot negate value of type ${this.typeName(val.type)}.`);
+									this.push(NULL);
+								}
+								else
+								{
+									this.push(Value(val.type, ~val.value));
+								}
 								break;
 							}
 							case op.ADD:
@@ -2823,31 +2998,45 @@ const Engel = (() =>
 								}
 								else
 								{
-									numOp((a, b) => a + b);
+									numOp((a, b) => a + b, 'addition');
 								}
 								break;
 							}
 							case op.SUB:
-								numOp((a, b) => a - b);
+								numOp((a, b) => a - b, 'subtraction');
 								break;
 							case op.MUL:
-								numOp((a, b) => a * b);
+								numOp((a, b) => a * b, 'multiplication');
 								break;
 							case op.MOD:
-								numOp((a, b) => a % b);
+								numOp((a, b) => a % b, 'modulation');
 								break;
 							case op.DIV:
-								numOp((a, b) => a / b);
+								numOp((a, b) => a / b, 'division');
 								break;
 							case op.EXP:
-								numOp((a, b) => a ** b);
+								numOp((a, b) => a ** b, 'exponentation');
+								break;
+							case op.LS:
+								intOp((a, b) => a << b, 'left shift');
+								break;
+							case op.RS:
+								intOp((a, b) => a >> b, 'right shift');
+								break;
+							case op.BAND:
+								intOp((a, b) => a & b, 'bitwise AND');
+								break;
+							case op.BOR:
+								intOp((a, b) => a | b, 'bitwise OR');
+								break;
+							case op.XOR:
+								intOp((a, b) => a ^ b, 'bitwise XOR');
 								break;
 							case op.TO_STR:
 								this.push(Value(ValueType.STRING, this.toStr(this.pop())));
 								break;
 							case op.CONCAT:
-								//alert(this.peek(0).value);
-								binary((a, b) => Value(ValueType.STRING, a + b));
+								binary((a, b) => Value(ValueType.STRING, a + b), 'concatenation');
 								break;
 							case op.NULL:
 								this.push(Value(ValueType.NULL, null));
@@ -2962,7 +3151,6 @@ const Engel = (() =>
 							default:
 							{
 								this.error(`Unrecognized op (${byte})`);
-								return;
 							}
 						}
 					}
@@ -2970,7 +3158,7 @@ const Engel = (() =>
 			};
 			return (lang) => Interpreter.interpret.call(Interpreter, lang);
 		};
-		return (chunk, lang) => interpreter(chunk)(lang);
+		return (chunk, lang) => interpreter(chunk, lang)();
 	})();
 	return {
 		lang: 'en',
@@ -2995,7 +3183,7 @@ while i < 20 {
 	io.print(fib(i))
 	i = i + 1
 }
-io.print('that took #{(kronos.clock() - time) / 1000 } seconds.')
+io.print('that took #{real(kronos.clock() - time) / 1000 } seconds.')
 `));
 Engel.run(prog, 'en');
 const dis = (prog, indent = 0) => {
@@ -3065,4 +3253,3 @@ const dis = (prog, indent = 0) => {
 		}
 	}
 };
-//dis(prog);
