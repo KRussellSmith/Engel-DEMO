@@ -22,76 +22,145 @@ const Engel = (() =>
 	{
 		const NULL = Value(ValueType.NULL, null);
 		const Native = (names, value) => ({ value, names });
+		const casters = {
+			'int': Value(ValueType.NATIVE, (vm, args) =>
+			{
+				if (args === 0)
+				{
+					return NULL;
+				}
+				const val = vm.stack[vm.top - args];
+				switch (val.type)
+				{
+					case ValueType.INT:
+						return val;
+					case ValueType.REAL:
+						return Value(ValueType.INT, val.value | 0);
+					case ValueType.STRING:
+					{
+						const toInt = parseInt(val.value);
+						if (Number.isNaN(toInt))
+						{
+							return NULL;
+						}
+						return Value(ValueType.INT, toInt)
+					}
+					case ValueType.BOOL:
+					{
+						return Value(ValueType.INT, val.value ? 1 : 0);
+					}
+				}
+				return NULL;
+			}),
+			'real': Value(ValueType.NATIVE, (vm, args) =>
+			{
+				if (args === 0)
+				{
+					return NULL;
+				}
+				const val = vm.stack[vm.top - args];
+				switch (val.type)
+				{
+					case ValueType.REAL:
+						return val;
+					case ValueType.INT:
+						return Value(ValueType.REAL, val.value);
+					case ValueType.STRING:
+					{
+						const toFloat = parseFloat(val.value);
+						if (Number.isNaN(toFloat))
+						{
+							return NULL;
+						}
+						return Value(ValueType.FLOAT, toInt)
+					}
+					case ValueType.BOOL:
+					{
+						return Value(ValueType.FLOAT, val.value ? 1 : 0);
+					}
+				}
+				return NULL;
+			}),
+			'string': Value(ValueType.NATIVE, (vm, args) =>
+			{
+				if (args === 0)
+				{
+					return NULL;
+				}
+				const val = vm.stack[vm.top - args];
+				return Value(ValueType.STRING, vm.toStr(val));
+			}),
+			'Boolean': Value(ValueType.NATIVE, (vm, args) =>
+			{
+				if (args === 0)
+				{
+					return NULL;
+				}
+				const val = vm.stack[vm.top - args];
+				return Value(ValueType.BOOLEAN, vm.isTrue(val));
+			}),
+		};
 		const libs = {
 			'.include': [
+				Native(
+					{
+						'en': 'int',
+						'es': 'ent',
+						'fr': 'ent',
+						'de': 'ganz',
+					},
+					casters['int']),
+				Native(
+					{
+						'en': 'real',
+						'es': 'real',
+						'fr': 'réel',
+						'de': 'echte',
+					},
+					casters['real']),
+				Native(
+					{
+						'en': 'string',
+						'es': 'cadena',
+						'fr': 'chaîne',
+						'de': 'kette',
+					},
+					casters['string']),
+				Native(
+					{
+						'en': 'Boolean',
+						'es': 'Booleano',
+						'fr': 'Booléen',
+						'de': 'Boolescher',
+					},
+					casters['Boolean']),
 				Native({
-					'en': 'int',
-					'es': 'ent',
-					'fr': 'ent',
-					'de': 'ganz',
+					'en': 'function',
+					'es': 'función',
+					'fr': 'fonction',
+					'de': 'funktion',
 				},
-				Value(ValueType.NATIVE, (vm, args) =>
+				Value(ValueType.NATIVE, (() =>
 				{
-					if (args === 0)
+					const functionTypes = [
+						ValueType.METHOD,
+						ValueType.FUNCTION,
+						ValueType.NATIVE,
+						]
+					return (vm, args) =>
 					{
-						return NULL;
-					}
-					const val = vm.stack[vm.top - args];
-					switch (val.type)
-					{
-						case ValueType.INT:
+						if (args === 0)
+						{
+							return NULL;
+						}
+						const val = vm.stack[vm.top - args];
+						if (functionTypes.indexOf(val.type) >= 0)
+						{
 							return val;
-						case ValueType.REAL:
-							return Value(ValueType.INT, val.value | 0);
-						case ValueType.STRING:
-						{
-							const toInt = parseInt(val.value);
-							if (Number.isNaN(toInt))
-							{
-								return NULK;
-							}
-							return Value(ValueType.INT, toInt)
 						}
-						case ValueType.BOOL:
-						{
-							return Value(ValueType.INT, val.value ? 1 : 0);
-						}
-					}
-				})),
-				Native({
-					'en': 'real',
-					'es': 'real',
-					'fr': 'réel',
-					'de': 'echte',
-				},
-				Value(ValueType.NATIVE, (vm, args) =>
-				{
-					if (args === 0)
-					{
 						return NULL;
-					}
-					const val = vm.stack[vm.top - args];
-					switch (val.type)
-					{
-						case ValueType.REAL:
-							return val;
-						case ValueType.INT:
-							return Value(ValueType.REAL, val.value);
-						case ValueType.STRING:
-						{
-							const toInt = parseFloat(val.value);
-							if (Number.isNaN(toInt))
-							{
-								return NULK;
-							}
-							return Value(ValueType.REAL, toInt)
-						}
-						case ValueType.BOOL:
-						{
-							return Value(ValueType.REAL, val.value ? 1 : 0);
-						}
-					}
-				})),
+					};
+				})())),
 			],
 			'io': [
 				Native({
@@ -102,14 +171,14 @@ const Engel = (() =>
 				},
 				Value(ValueType.NATIVE, (vm, args) =>
 				{
-				   for (let i = vm.top - 1; i >= vm.top - args; --i)
+				   for (let i = vm.top - args; i <= vm.top - 1; ++i)
 				   {
 				      console.log(vm.toStr(vm.stack[i]));
 				   }
 				   return NULL;
 				})),
 			],
-			'kronos': [
+			'krono': [
 				Native({
 						'en': 'clock',
 						'es': 'metra',
@@ -146,13 +215,36 @@ const Engel = (() =>
 				},
 				Value(ValueType.NATIVE, (vm, args) =>
 				{
-					if (args.length !== 2)
+					if (args.length < 2)
 					{
-						return null;
+						return NULL;
 					}
 					const x = vm.peek(1);
 					const y = vm.peek(0);
-					return Value(ValueType.REAL, (x ** 2 + y ** 2) ** 0.5);
+					if (!vm.isNum(x) || !vm.isNum(y))
+					{
+						return NULL;
+					}
+					return Value(ValueType.REAL, (x.value ** 2 + y.value ** 2) ** 0.5);
+				})),
+				Native({
+					'en': 'log',
+					'es': 'log',
+					'fr': 'log',
+					'de': 'log',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					if (args.length === 0)
+					{
+						return NULL;
+					}
+					const x = vm.peek(1);
+					if (!vm.isNum(x) || !vm.isNum(y))
+					{
+						return NULL;
+					}
+					return Value(ValueType.REAL, Math.log(x));
 				})),
 			],
 			'game':   [
@@ -213,7 +305,8 @@ const Engel = (() =>
 		'ARRAY',     'HASH',       'DUMP',
 		'SUBSCRIPT', 'OBJ',        'GET_PROP',
 		'SET_PROP',  'SET_SUBSET', 'METHOD',
-		'TO_STR',    'CONCAT',     'RETURN');
+		'TO_STR',    'CONCAT',     'JMP_IF_NULL',
+		'RETURN');
 	
 	const compile = (() =>
 	{
@@ -240,7 +333,7 @@ const Engel = (() =>
 			'FUNC',      'HASH_START', 'OBJ_START',
 			'FAT_ARROW', 'IMPORT',     'ERROR',
 			'DOT',       'QUESTION',   'IN',
-			'FIN');
+			'NULL',      'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -258,6 +351,7 @@ const Engel = (() =>
 				'else':   TokenType.ELSE,
 				'true':   TokenType.TRUE,
 				'false':  TokenType.FALSE,
+				'null':   TokenType.NULL,
 				'jump':   TokenType.CONTINUE,
 				'break':  TokenType.BREAK,
 				'while':  TokenType.WHILE,
@@ -326,7 +420,7 @@ const Engel = (() =>
 									this.advance();
 									break;
 							case ';':
-								while (!this.fin() && !!this.spy('\n'))
+								while (!this.fin() && !this.spy('\n'))
 								{
 									this.advance();
 								}
@@ -337,7 +431,7 @@ const Engel = (() =>
 				},
 				isAlpha(x)
 				{
-					return RegExp(/^\p{L}/, 'u').test(x);
+					return x === '_' || RegExp(/^\p{L}/, 'u').test(x);
 				},
 				isDigit(x)
 				{
@@ -662,15 +756,15 @@ const Engel = (() =>
 			'REAL',       'INT',           'GET',
 			'ENDL',       'LPAREN',        'RPAREN',
 			'TRUE',       'FALSE',         'AND',
-			'OR',         'ELSE',          
+			'OR',         'ELSE',          'OPTIONAL',
 			'IF',         'SET',           'LBRACE',
 			'RBRACE',     'COMP',          'NOT',
-			'NULL',       'FOR',           
+			'NULL',       'FOR',           'PASS',
 			'WHILE',      'BREAK',         'CONTINUE',
 			'THIS',       'CALL',          'MATCH',
 			'RETURN',     'DECLARE',       'BLOCK',
 			'FUNC_BLOCK', 'FUNC',          'HASH',
-			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
+			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIG N',
 			'OBJ',        'EXPR',          'FUNC_CALL',
 			'ARRAY',      'IMPORT',        'GET_PROP',
 			'SET_PROP',   'FIN');
@@ -727,35 +821,35 @@ const Engel = (() =>
 				Declare: (name, value) => ({
 					name, value,
 				}),
-				Declarations: (isConst, line) => ({
+				Declarations: (isConst, line = 0) => ({
 					...base(NodeType.DECLARE, line),
 					isConst,
 					list: [],
 				}),
-				Assign: (left, right, line) => ({
+				Assign: (left, right, op, line = 0) => ({
 					...base(NodeType.SET, line),
-					left, right,
+					left, right, op
 				}),
-				Func: (args, name, body, line) => ({
+				Func: (args, name, body, line = 0) => ({
 					...base(NodeType.FUNC, line),
 					args, name, body,
 				}),
-				FuncCall: (args, callee, line) => ({
+				FuncCall: (args, callee, line = 0) => ({
 					...base(NodeType.FUNC_CALL, line),
 					args, callee,
 				}),
-				Block: (nodes = [], line) => ({
+				Block: (nodes = [], line = 0) => ({
 					...base(NodeType.BLOCK, line),
 					nodes,
 				}),
-				FuncBlock: (nodes, line) => ({
+				FuncBlock: (nodes, line = 0) => ({
 				   ...base(NodeType.FUNC_BLOCK, line),
 				   nodes,
 				}),
 				Comparison: (type, value) => ({
 					type, value
 				}),
-				Comparisons: (primer, list, line) => ({
+				Comparisons: (primer, list, line = 0) => ({
 					...base(NodeType.COMP, line),
 					primer, list,
 				}),
@@ -780,17 +874,26 @@ const Engel = (() =>
 					...base(NodeType.OBJ, line),
 					fields, methods,
 				}),
-				GetProp: (obj, name = '', line = 0) => ({
+				GetProp: (left, right, line = 0) => ({
 					...base(NodeType.GET_PROP, line),
-					obj, name,
+					left, right,
 				}),
-				SetProp: (obj, name = '', value, line = 0) => ({
+				SetProp: (obj, value, op, line = 0) => ({
 					...base(NodeType.SET_PROP, line),
-					obj, name, value,
+					obj, value, op,
+				}),
+				SetSubscript: (map, name = '', value, op, line = 0) => ({
+					...base(NodeType.SET_SUBSCRIPT, line),
+					map, name, value, op,
 				}),
 				For: (local = '', mutable = false, value = null, body = null, line = 0) => ({
 					...base(NodeType.FOR, line),
 					local, value, body, mutable,
+				}),
+				Assign: (left, right, op, line = 0) =>
+				({
+					...base(NodeType.ASSIGN, line),
+					left, right, op, line,
 				}),
 			}
 		})();
@@ -907,7 +1010,7 @@ const Engel = (() =>
 						else if (this.taste(TokenType.DOT))
 						{
 							this.eat(TokenType.ID, 'Expected identifier.');
-							const name = this.prev.value;
+							const name = Node.Constant(NodeType.STRING, this.prev);
 							result = Node.GetProp(result, name, this.prev.line);
 						}
 						else if (this.taste(TokenType.QUESTION))
@@ -957,6 +1060,10 @@ const Engel = (() =>
 					else if (this.taste(TokenType.FALSE))
 					{
 					   result = Node.Nilary(NodeType.FALSE, this.prev.line);
+					}
+					else if (this.taste(TokenType.NULL))
+					{
+					   result = Node.Nilary(NodeType.NULL, this.prev.line);
 					}
 					else if (this.taste(TokenType.NULL))
 					{
@@ -1382,20 +1489,41 @@ const Engel = (() =>
 				assignment()
 				{
 					const result = this.ifelse();
-					if (this.taste(TokenType.SET))
+					if (this.taste(
+						TokenType.SET,
+						TokenType.ADD_SET,
+						TokenType.SUB_SET,
+						TokenType.MUL_SET,
+						TokenType.MOD_SET,
+						TokenType.DIV_SET,
+						TokenType.EXP_SET,
+						TokenType.LS_SET,
+						TokenType.RS_SET,
+						TokenType.BAND_SET,
+						TokenType.BOR_SET,
+						TokenType.XOR_SET))
 					{
+						const op = this.prev.type;
+						this.skipBreaks();
 						if (result.type === NodeType.SUBSCRIPT)
 						{
 							result.type = NodeType.PASS;
 							const right = this.assignment();
-							return Node.Binary(NodeType.SET_SUBSCRIPT, result, right, this.prev.line);
+							return Node.SetSubscript(result, right, op, this.prev.line);
+						}
+						else if (result.type === NodeType.GET_PROP)
+						{
+							result.type = NodeType.PASS;
+							const right = this.assignment();
+							//alert(JSON.stringify(result))
+							return Node.SetProp(result, right, op, this.prev.line);
 						}
 						else if (result.type !== NodeType.GET)
 						{
 							this.error(this.prev, 'Invalid target for assignment.');
 						}
 						const right = this.assignment();
-						return Node.Binary(NodeType.ASSIGN, result, right, this.prev.line);
+						return Node.Assign(result, right, op, this.prev.line);
 					}
 					return result;
 				},
@@ -1631,7 +1759,54 @@ const Engel = (() =>
 					daddy: scope.loop,
 				};
 				return scope.loop = result;
-			}
+			};
+			const setOp = type =>
+			{
+			   switch (type)
+			   {
+			      case TokenType.ADD_SET:
+			         return op.ADD;
+			      case TokenType.SUB_SET:
+			         return op.SUB;
+			      case TokenType.MUL_SET:
+			         return op.MUL;
+			      case TokenType.MOD_SET:
+			         return op.MOD;
+			      case TokenType.DIV_SET:
+			         return op.DIV;
+			      case TokenType.EXP_SET:
+			         return op.EXP;
+			      case TokenType.LS_SET:
+			         return op.LS;
+			      case TokenType.RS_SET:
+			         return op.RS;
+			      case TokenType.BAND_SET:
+			         return op.BAND;
+			      case TokenType.BOR_SET:
+			         return op.BOR;
+			      case TokenType.XOR_SET:
+			         return op.XOR;
+			   }
+			};
+			const compOp = type =>
+			{
+			   switch (type)
+			   {
+			      case TokenType.LT:
+			         return op.LT;
+			      case TokenType.GT:
+			         return op.GT;
+			      case TokenType.LE:
+			         return op.LE;
+			      case TokenType.GE:
+			         return op.GE;
+			      case TokenType.EQUIV:
+			         return op.EQUIV;
+			      case TokenType.NOT_EQUIV:
+			         return op.NOT_EQUIV;
+			   }
+			   return null;
+			};
 			const Compiler = {
 				curr: null,
 				get chunk()
@@ -1894,25 +2069,6 @@ const Engel = (() =>
 							break;
 						case NodeType.COMP:
 						{
-							const getOp = (type) =>
-							{
-								switch (type)
-								{
-									case TokenType.LT:
-										return op.LT;
-									case TokenType.GT:
-										return op.GT;
-									case TokenType.LE:
-										return op.LE;
-									case TokenType.GE:
-										return op.GE;
-									case TokenType.EQUIV:
-										return op.EQUIV;
-									case TokenType.NOT_EQUIV:
-										return op.NOT_EQUIV;
-								}
-								return null;
-							}
 							this.visit(node.primer)
 							if (node.list.length === 1)
 							{
@@ -1926,7 +2082,7 @@ const Engel = (() =>
 									const comp = node.list[i];
 									this.visitUnary(comp, op.DUP);
 									this.emit(op.ROT3);
-									this.emit(getOp(comp.type));
+									this.emit(compOp(comp.type));
 									if (i < node.list.length - 1)
 									{
 										this.emit(op.AND);
@@ -2037,7 +2193,7 @@ const Engel = (() =>
 							this.endScope();
 							break;
 						}
-						case NodeType.JUMP:
+						case NodeType.CONTINUE:
 						{
 							this.emit(op.GOTO);
 							this.curr.loop.continues.push(this.saveSpot());
@@ -2065,6 +2221,16 @@ const Engel = (() =>
 						{
 							this.visit(node.left);
 							this.emit(op.OR); 
+							const jump = this.saveSpot();
+							this.emit(...this.uInt());
+							this.visit(node.right);
+							this.jump(jump);
+							break;
+						}
+						case NodeType.OPTIONAL:
+						{
+							this.visit(node.left);
+							this.emit(op.JMP_IF_NULL); 
 							const jump = this.saveSpot();
 							this.emit(...this.uInt());
 							this.visit(node.right);
@@ -2238,12 +2404,23 @@ const Engel = (() =>
 						{
 							const { name } = node.left;
 							let depth = this.findLocal(name);
-							this.visit(node.right);
 							if (depth >= 0)
 							{
 								if (this.curr.locals[depth].isConst)
 								{
 									this.error(`Cannot define constant ${name} after declaration.`);
+								}
+								if (node.op !== TokenType.SET)
+								{
+									this.emit(
+									   op.GET_LOCAL,
+									   ...this.uLEB(depth));
+									this.visit(node.right);
+									this.emit(setOp(node.op))
+								}
+								else
+								{
+									this.visit(node.right)
 								}
 								this.emit(
 									op.SET_LOCAL,
@@ -2254,6 +2431,18 @@ const Engel = (() =>
 							}
 							else if ((depth = this.findUpvalue(name, this.curr)) >= 0)
 							{
+								if (node.op !== TokenType.SET)
+								{
+								   this.emit(
+								      op.GET_UPVAL,
+								      ...this.uLEB(depth));
+								   this.visit(node.right);
+								   this.emit(setOp(node.op))
+								}
+								else
+								{
+								   this.visit(node.right)
+								}
 								this.emit(
 									op.SET_UPVAL,
 									...this.uLEB(depth));
@@ -2263,6 +2452,18 @@ const Engel = (() =>
 							}
 							else
 							{
+								if (node.op !== TokenType.SET)
+								{
+									this.emit(
+										op.GET_GLOBAL,
+										...this.addConst(Value(NodeType.STRING, name)));
+									this.visit(node.right);
+									this.emit(setOp(node.op))
+								}
+								else
+								{
+								   this.visit(node.right)
+								}
 								this.emit(
 									op.SET_GLOBAL,
 									...this.addConst(Value(NodeType.STRING, name)));
@@ -2275,9 +2476,31 @@ const Engel = (() =>
 						}
 						case NodeType.GET_PROP:
 						{
-							this.visit(node.obj);
-							this.emitConst(node.name, ValueType.STRING);
-							this.emit(op.GET_PROP);
+							//alert(JSON.stringify(node));
+							this.visitBinary(node, op.GET_PROP);
+							break;
+						}
+						case NodeType.SET_PROP:
+						{
+							//alert(JSON.stringify(node));
+							if (node.op !== TokenType.SET)
+							{
+								// Get the property:
+								this.visit(node.obj);
+								this.emit(op.GET_PROP);
+								// Get the right-hand, perform operation:
+								this.visit(node.value);
+								this.emit(setOp(node.op));
+								
+								this.visit(node.obj);
+								this.emit(op.SET_PROP);
+							}
+							else
+							{
+								this.visit(node.value);
+								this.visit(node.obj);
+								this.emit(op.SET_PROP);
+							}
 							break;
 						}
 						case NodeType.FUNC_BLOCK:
@@ -2346,6 +2569,13 @@ const Engel = (() =>
 						{
 							this.emitConst(node.value, ValueType.STRING);
 							this.emit(op.IMPORT);
+							break;
+						}
+						case NodeType.PASS:
+						{
+							//alert(JSON.stringify(node));
+							this.visit(node.left);
+							this.visit(node.right);
 							break;
 						}
 					}
@@ -2505,7 +2735,9 @@ const Engel = (() =>
 						}
 						default:
 						{
-							this.error('Not a function');
+							this.error({
+								'en': 'Not a function'
+							});
 							break;
 						}
 					}
@@ -2582,7 +2814,7 @@ const Engel = (() =>
 				},
 				subscript()
 				{
-					const value = this.peek(1).value;
+					const value = this.peek(1);
 					const key   = this.peek(0);
 					switch (value.type)
 					{
@@ -2594,28 +2826,88 @@ const Engel = (() =>
 								const index = key.value;
 								if (index < 0 || index >= key.length)
 								{
-									this.error(`Value ${index} outside of subscriptable range.`);
-									return NULL;
+									this.error({
+										'en': `Value ${index} outside of subscriptable range.`
+										});
+									break;
 								}
-								return value[key.value];
+								result = value.value[key.value];
+								break;
 							}
-							this.error(`Can only subscript value of type ${value.type} with an integer.`);
-							return NULL;
+							this.error({
+								'en': `Can only subscript value of type ${this.typeName(value)} with an integer.`
+								});
+							break;
 						}
 						case ValueType.HASHMAP:
 						{
 							if (!(key.value in value))
 							{
-								this.error(`No key '${this.str(key)} in map.`);
-								return NULL;
+								this.error({
+									'en': `No key '${this.str(key)} in map.`,
+									});
+								break;
 							}
-							return value[key.value];
+							result = value.value[key.value];
+							break;
 						}
 						default:
 						{
-							this.error(`Value of type ${value.type} not subscriptable.`);
-							return NULL;
+							this.error({
+								'en': `Value of type ${this.typeName(value)} not subscriptable.`,
+								});
+							break;
 						}
+					}
+					this.pop();
+					this.pop();
+					this.push(result);
+				},
+				subscriptSet()
+				{
+					const value  = this.peek(2);
+					const key    = this.peek(1);
+					const setVal = this.peek(0);
+					let result = NULL;
+					switch (value.type)
+					{
+						case ValueType.STRING:
+						case ValueType.ARRAY:
+						{
+							if (key.type === ValueType.INT)
+							{
+								const index = key.value;
+								if (index < 0 || index >= key.length)
+								{
+									this.error({
+										'en': `Value ${index} outside of subscriptable range.`,
+										});
+									break;
+								}
+								result = value.value[key.value];
+								break;
+							}
+							this.error({
+								'en': `Can only subscript value of type ${this.typeName(value)} with an integer.`
+								});
+							break;
+						}
+						case ValueType.HASHMAP:
+						{
+							result = value.value[key.value] = setVal;
+							break;
+						}
+						default:
+						{
+							this.error({
+								'en': `Value of type ${this.typeName(value)} not subscriptable.`,
+								});
+							break;
+						}
+						this.pop();
+						this.pop();
+						this.pop();
+						this.push(result);
 					}
 				},
 				toStr(value)
@@ -2627,6 +2919,8 @@ const Engel = (() =>
 						case ValueType.INT:
 						case ValueType.REAL:
 							return value.value.toString();
+						case ValueType.NULL:
+							return 'null';
 					}
 					return '';
 				},
@@ -2637,6 +2931,10 @@ const Engel = (() =>
 						[ValueType.REAL]:     'real',
 						[ValueType.STRING]:   'string',
 						[ValueType.FUNCTION]: 'function',
+						[ValueType.METHOD]:   'function',
+						[ValueType.NATIVE]:   'function',
+						[ValueType.NULL]:     'null',
+						[ValueType.BOOL]:     'Boolean',
 					}[val.type];
 				},
 				importNative(lib = '')
@@ -2684,9 +2982,11 @@ const Engel = (() =>
 					};
 					const intOp = (func, name = '') =>
 					{
-						if (this.peek(0).type !== ValueType.INT || this.peek(1).valueType !== INT)
+						if (this.peek(0).type !== ValueType.INT || this.peek(1).type !== ValueType.INT)
 						{
-							this.error(`${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`);
+							this.error({
+								'en': `${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`
+							});
 							this.pop();
 							this.pop();
 							this.push(NULL)
@@ -2701,7 +3001,9 @@ const Engel = (() =>
 						if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
 						{
 							
-							this.error(`Expected numeric values for comparision, got ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`);
+							this.error({
+								'en': `Expected numeric values for comparision, got ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`,
+							});
 							this.pop();
 							this.pop();
 							this.push(NULL);
@@ -2727,7 +3029,7 @@ const Engel = (() =>
 						}
 						if (this.currError !== null)
 						{
-							throw(Error(this.currError));
+							throw(Error(this.currError[this.lang]));
 							break;
 						}
 						switch (byte)
@@ -2810,7 +3112,6 @@ const Engel = (() =>
 							case op.OBJ:
 							{
 								const len = this.uLEB();
-								alert(len)
 								const fields = {};
 								const methods = {};
 								for (let i = 0; i < len; ++i)
@@ -2841,24 +3142,66 @@ const Engel = (() =>
 							case op.GET_PROP:
 							{
 								const key = this.pop().value;
-								if (this.peek(0).type !== ValueType.OBJ)
+								const obj = this.pop();
+								if (obj.type !== ValueType.OBJ)
 								{
-									this.error(`Cannot read property on type ${this.pop().type}.`);
-									return;
+									this.error({
+										'en': `Cannot read property on type ${this.typeName(obj)}.`
+									});
+									this.push(NULL);
+									break;
 								}
-								const map = this.pop().value;
-								if (key in map.fields)
+								if (key in obj.value.fields)
 								{
-									this.push(map.fields[key]);
+									this.push(obj.value.fields[key]);
 								}
-								else if (key in map.methods)
+								else if (key in obj.value.methods)
 								{
-									this.push(map.methods[key]);
+									this.push(obj.value.methods[key]);
 								}
 								else
 								{
-									this.error(`Property ${key} is undefined.`);
+									this.error({
+										'en': `Property ${key} is undefined.`,
+									});
 									this.push(NULL);
+									break;
+								}
+								break;
+							}
+							case op.SET_PROP:
+							{
+								const key    = this.pop().value;
+								const obj    = this.pop();
+								const setVal = this.pop();
+								if (obj.type !== ValueType.OBJ)
+								{
+									this.error({
+										'en': `Cannot set property on type ${this.typeName(obj)}.`
+									});
+									this.push(NULL);
+									break;
+								}
+								if (key in obj.value.fields)
+								{
+									obj.value.fields[key] = setVal;
+									this.push(obj.value.fields[key]);
+								}
+								else if (key in obj.value.methods)
+								{
+									this.error({
+										'en': `Cannot redefine method ${key}.`,
+									});
+									this.push(NULL);
+									break;
+								}
+								else
+								{
+									this.error({
+										'en': `Cannot set property '${key},' not in object.`
+									});
+									this.push(NULL);
+									break;
 								}
 								break;
 							}
@@ -2867,7 +3210,9 @@ const Engel = (() =>
 								const name = this.getConst().value;
 								if (!(name in this.globals))
 								{
-									this.error(`${name} is undefined.`);
+									this.error({
+										'en': `${name} is undefined.`
+									});
 									this.push(NULL);
 								}
 								else this.push(this.globals[name].value);
@@ -2879,7 +3224,9 @@ const Engel = (() =>
 								const val = this.pop();
 								if (!(name in this.globals))
 								{
-									this.error(`${name} is undefined.`);
+									this.error({
+										'en': `${name} is undefined.`
+									});
 								}
 								else this.globals[name].value = val;
 								break;
@@ -2965,7 +3312,9 @@ const Engel = (() =>
 								const val = this.pop();
 								if (!this.isNum(val))
 								{
-									this.error(`Cannot negate value of type ${this.typeName(val.type)}.`);
+									this.error({
+										'en': `Cannot negate value of type ${this.typeName(val.type)}.`,
+									});
 									this.push(NULL);
 								}
 								else
@@ -2979,7 +3328,9 @@ const Engel = (() =>
 								const val = this.pop();
 								if (!this.isNum(val))
 								{
-									this.error(`Cannot negate value of type ${this.typeName(val.type)}.`);
+									this.error({
+										'en': `Cannot apply bitwise inverse to value of type ${this.typeName(val.type)}.`,
+									});
 									this.push(NULL);
 								}
 								else
@@ -3085,6 +3436,19 @@ const Engel = (() =>
 								}
 								break;
 							}
+							case op.JMP_IF_NULL:
+							{
+								const jump = this.uInt();
+								if (this.peek().type === ValueType.NULL)
+								{
+									this.frame.ip += jump;
+								}
+								else
+								{
+									this.pop();
+								}
+								break;
+							}
 							case op.DUMP:
 							{
 								alert(JSON.stringify(this.stack));
@@ -3098,15 +3462,12 @@ const Engel = (() =>
 							}
 							case op.SUBSCRIPT:
 							{
-								const value = this.subscript()
-								if (value !== null)
-								{
-									this.push(this.subscript());
-								}
-								else
-								{
-									return;
-								}
+								this.subscript();
+								break;
+							}
+							case op.SET_SUBSCRIPT:
+							{
+								this.subscriptSet();
 								break;
 							}
 							case op.CLOSURE:
@@ -3175,15 +3536,26 @@ const Engel = (() =>
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
 const prog = (Engel.compile(`
 import io
-import kronos
-let time = kronos.clock()
-let i = 0
-dec fib = (x) -> 1 if x <= 1 else call(x - 2) + call(x - 1)
-while i < 20 {
-	io.print(fib(i))
-	i = i + 1
-}
-io.print('that took #{real(kronos.clock() - time) / 1000 } seconds.')
+dec Cat = (name, lives) -> #{
+	__init__() ->
+	{
+		io.print('Say hi, #{this.name}!', this.sound)
+		return this
+	}
+	name  = name
+	sound = 'meow!'
+	lives = lives
+	foo = #{
+		b = 40
+		a() -> this.b * 4
+	}
+}.__init__()
+dec Harold = Cat('Harold', 9) ; Do not ask why I named this cat 'Harold,' I honestly don't know.
+Harold.foo.b = Harold.lives * 10
+io.print(Harold.lives)
+function(Harold.__init__)?()
+function(Harold.name)?()
+io.print(function(Harold.foo?.a)?())
 `));
 Engel.run(prog, 'en');
 const dis = (prog, indent = 0) => {
