@@ -10,14 +10,18 @@
 
 <body>
 	<pre id='editor'><code contenteditable='true'>import io
-; The following class shows closures and operator overloading:
+`The following class shows
+ closures and operator overloading:
+.`
 dec integer = (num) ->
 {
 	dec x = int(num)
 	return #{
+		; Unary:
 		- -> -x
 		+ -> +x
 		~ -> ~x
+		; Binary:
 		- y -> x - y
 		+ y -> x + y
 		* y -> x * y
@@ -47,17 +51,46 @@ io.print('20 + 50 = #{twenty + 50}') ; 70</code></pre>
 		//window.setInterval(() => terminal.write('<p>foo</p>'), 200);
 	</script>
 	<script src='main.js'></script>
+	
 	<script src='highlighter.js' type='module'></script>
 	<script type='module'>
 		import { highlight } from './highlighter.js';
+		import { Caret } from './caret.js';
 		(() =>
 		{
 			const editor = document.querySelector('#editor code');
+			const caret = new Caret(editor);
 			highlight(editor);
+			
+			// Using the 'input' event listener causes issues (i.d. the inputted character being doubled.)
 			editor.addEventListener('input', e =>
 			{
 				highlight(editor);
-			})
+				e.preventDefault();
+			});
+			editor.addEventListener('keydown', e =>
+			{
+				const TAB   = 9;
+				const ENTER = 13;
+				switch (e.keyCode)
+				{
+					case TAB:
+					{
+						document.execCommand('insertText', false, '\t');
+						e.preventDefault();
+						break;
+					}
+					case ENTER:
+					{
+						const lines = editor.innerText.split('\n');
+						const line = editor.innerText.substring(0, caret.getPos()).split('\n').length;
+						const spaces = /^[ \t]+/.exec(lines[line - 1]) || '';
+						document.execCommand('insertText', false, `\n${spaces}`);
+						e.preventDefault();
+						break;
+					}
+				}
+			});
 		})();
 	</script>
 </body>

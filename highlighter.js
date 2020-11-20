@@ -26,6 +26,7 @@ export function highlight(editor)
 	const NUM  = '#F88379';
 	const FUNC = '#7DF9FF';
 	const COMM = '#006A4E';
+	const ID   = '#91A3B0'
 	const Highlighter = {
 		source: editor.innerText,
 		line: 1,
@@ -111,13 +112,34 @@ export function highlight(editor)
 							done = true;
 							break;
 						}
-							// Fall-through
-						}
-						default:
-						{
-							string += curr;
-							break;
-						}
+						break;
+					}
+				}
+			} while (!done);
+			return TEXT;
+		},
+		doubleString()
+		{
+			
+			let string = '';
+			let done = false;
+			do
+			{
+				if (this.fin())
+				{
+					break;
+				}
+				const curr = this.advance();
+				switch (curr)
+				{
+					// The terminator:
+					case '"':
+						done = true;
+						break;
+					// Escape sequences:
+					case '\\':
+						this.advance();
+						break;
 					}
 			} while (!done);
 			return TEXT;
@@ -137,6 +159,9 @@ export function highlight(editor)
 				case '\'':
 					color = this.singleString();
 					break;
+				case '"':
+					color = this.doubleString();
+					break;
 				case ';':
 					while (!this.fin() && !this.spy('\n'))
 					{
@@ -144,6 +169,35 @@ export function highlight(editor)
 					}
 					color = COMM;
 					break;
+				case '`':
+				{
+					let depth = 1;
+					for (;;)
+					{
+						const char = this.advance();
+						if (this.fin())
+						{
+							break;
+						}
+						if (char === '.')
+						{
+							if (this.match('`'))
+							{
+								--depth;
+							}
+						}
+						else if (this.match('`'))
+						{
+							++depth;
+						}
+						if (depth <= 0)
+						{
+							break;
+						}
+					}
+					color = COMM;
+					break;
+				}
 				case '-':
 					if (this.match('>'))
 					{
@@ -202,7 +256,7 @@ export function highlight(editor)
 							color = KEY;
 							break;
 						}
-						color = NORM;
+						color = ID;
 						break;
 					}
 					color = NORM;

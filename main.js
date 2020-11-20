@@ -9,15 +9,6 @@ const terminal = {
 	},
 };
 const editor = document.querySelector('#editor');
-editor.addEventListener('keydown', e =>
-{
-	const TAB = 9;
-	if (e.keyCode === TAB)
-	{
-		document.execCommand('insertHTML', false, '&#009');
-		e.preventDefault();
-	}
-});
 const Engel = (() =>
 {
 	const Enum = (...args) =>
@@ -488,6 +479,34 @@ const Engel = (() =>
 									this.advance();
 								}
 								break;
+							case '`':
+							{
+								let depth = 1;
+								for (;;)
+								{
+								   const char = this.advance();
+								   if (this.fin())
+								   {
+								      break;
+								   }
+								   if (char === '.')
+								   {
+								      if (this.match('`'))
+								      {
+								         --depth;
+								      }
+								   }
+								   else if (this.match('`'))
+								   {
+								      ++depth;
+								   }
+								   if (depth <= 0)
+								   {
+								      break;
+								   }
+								}
+								break;
+							}
 							default: return;
 						}
 					}
@@ -507,6 +526,81 @@ const Engel = (() =>
 				error(message)
 				{
 					return Token(TokenType.ERROR, this, message);
+				},
+				doubleString()
+				{
+					let string = '';
+					let done = false;
+					let type = TokenType.STRING;
+					do
+					{
+						if (this.fin())
+						{
+							return this.error({
+								'en': 'Unterminated string!'
+							});
+						}
+						const curr = this.advance();
+						switch (curr)
+						{
+							// The terminator:
+							case '"':
+								done = true;
+								break;
+							// Escape sequences:
+							case '\\':
+							{
+								switch (this.look())
+								{
+									case 'n':
+										string += '\n';
+										break;
+									case 'r':
+										string += '\r';
+										break;
+									case 'f':
+										string += '\f';
+										break;
+									case 't':
+										string += '\t';
+										break;
+									case 'v':
+										string += '\v';
+										break;
+									case 'a':
+										string += '\a';
+										break;
+									case 'b':
+										string += '\b';
+										break;
+									case '"':
+										string += '"';
+										break;
+									case '\\':
+										string += '\\';
+										break;
+									case '\n':
+										break;
+									default:
+										return this.error({
+											'en': `Unrecognized escape: \\${this.look()}`,
+										});
+									}
+									this.advance();
+									break;
+								}
+								default:
+								{
+									if (curr == '\n')
+									{
+										this.newLine();
+									}
+									string += curr;
+									break;
+								}
+							}
+					} while (!done);
+					return Token(type, this, string);
 				},
 				singleString()
 				{
@@ -739,6 +833,8 @@ const Engel = (() =>
 							});
 						case '\'':
 							return this.singleString();
+						case '"':
+							return this.doubleString();
 						case '\n':
 							this.newLine();
 							return Token(TokenType.ENDL, this);
@@ -1517,7 +1613,7 @@ const Engel = (() =>
 					else
 					{
 						this.error(this.curr, {
-							'en': 'Invalid expression.',
+							'en': `Unexpected token ${this.curr.value}.`,
 						});
 						this.advance();
 						return null;
@@ -2938,6 +3034,7 @@ const Engel = (() =>
 				openUpvalues: null,
 				currError:    null,
 				lang,
+				
 				Upvalue(location)
 				{
 					return {
@@ -3290,6 +3387,10 @@ const Engel = (() =>
 						case ValueType.METHOD:
 						case ValueType.NATIVE:
 							return '<function>';
+						case ValueType.OBJ:
+							return '<object>';
+						case ValueType.ARRAY:
+							
 					}
 					return '';
 				},
@@ -3317,7 +3418,69 @@ const Engel = (() =>
 						'en': `Library '${lib}' not found.`,
 					});
 				},
-				
+				opName(code)
+				{
+					switch (code)
+					{
+						case op.ADD:
+						case op.I_ADD:
+							return 'addition';
+						case op.SUB:
+						case op.I_SUB:
+							return 'subtraction';
+						case op.MUL:
+						case op.I_MUL:
+							return 'multiplication';
+						case op.MOD:
+						case op.I_MOD:
+							return 'modulation';
+						case op.DIV:
+						case op.I_DIV:
+							return 'division';
+						case op.EXP:
+						case op.I_EXP:
+							return 'exponentation';
+						case op.LS:
+						case op.I_LS:
+							return 'leftward shift';
+						case op.RS:
+						case op.I_RS:
+							return 'rightward shift';
+						case op.BAND:
+						case op.I_BAND:
+							return 'bitwise AND';
+						case op.BOR:
+						case op.I_BOR:
+							return 'bitwise OR';
+						case op.XOR:
+						case op.I_XOR:
+							return 'bitwise XOR';
+						case op.LT:
+						case op.GT:
+						case op.LE:
+						case op.GE:
+							return 'comparision';
+						case op.POS:
+							return 'positive';
+						case op.NEG:
+							return 'negation';
+						case op.BNOT:
+							return 'bitwise inverse'
+					}
+					return '';
+				},
+				typeError(code, a, b = null)
+				{
+					if (b === null)
+					{
+						return this.error({
+							'en': `Invalid type for ${this.opName(code)}: ${this.typeName(a)}`,
+						})
+					}
+					return this.error({
+						'en': `Invalid types for ${this.opName(code)}: ${this.typeName(a)}, ${this.typeName(b)}`,
+					});
+				},
 				callBinOp(code)
 				{
 					const a = this.peek(1);
@@ -3332,7 +3495,7 @@ const Engel = (() =>
 					else
 					{
 						this.error({
-							'en': `Undefined operation for object.`,
+							'en': `Undefined operation for object: ${this.opName(code)}`,
 						})
 						this.pop();
 						this.put(0, NULL);
@@ -3349,7 +3512,7 @@ const Engel = (() =>
 					else
 					{
 						this.error({ 
-							'en': `Undefined operation for object.`,
+							'en': `Undefined operation for object: ${this.opName(code)}`,
 						});
 						this.put(0, NULL);
 					}
@@ -3362,9 +3525,7 @@ const Engel = (() =>
 					}
 						else if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
 						{
-							this.error({
-								'en': `${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`,
-							});
+							this.typeError(code, this.peek(1), this.peek(0));
 							this.pop();
 							this.pop();
 							this.push(NULL);
@@ -3416,9 +3577,7 @@ const Engel = (() =>
 					}
 					else if (this.peek(0).type !== ValueType.INT || this.peek(1).type !== ValueType.INT)
 					{
-						this.error({
-							'en': `${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`
-						});
+						this.typeError(code, this.peek(1), this.peek(0));
 						this.pop();
 						this.pop();
 						this.push(NULL)
@@ -3460,9 +3619,7 @@ const Engel = (() =>
 					}
 					else if (!this.isNum(a) || !this.isNum(b))
 					{
-						this.error({
-							'en': `Expected numeric values for comparision, got ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`,
-						});
+						this.typeError(code, a, b);
 						this.pop();
 						this.put(0, NULL);
 					}
@@ -3504,11 +3661,9 @@ const Engel = (() =>
 					}
 					else if (!this.isNum(a) || !this.isNum(b))
 					{
-						this.error({
-								'en': `Invalid operation (expected numbers, got ${this.typeName(a)} and ${this.typeName(b)}.)`,
-							});
-							this.pop(0);
-							this.put(0, NULL);
+						this.typeError(code, a, b);
+						this.pop(0);
+						this.put(0, NULL);
 					}
 					else
 					{
@@ -3552,9 +3707,7 @@ const Engel = (() =>
 					}
 					else if (a.type !== ValueType.INT || b.type !== ValueType.INT)
 					{
-						this.error({
-							'en': `Invalid operation (expected integers, got ${this.typeName(a)} and ${this.typeName(b)}.)`,
-						});
+						this.typeError(code, a, b);
 						this.pop();
 						this.put(0, NULL);
 					}
@@ -3602,9 +3755,7 @@ const Engel = (() =>
 							{
 								if (!this.isNum(x))
 								{
-									this.error({
-										'en': `Cannot return positive value of type ${this.typeName(x)}.`,
-									});
+									this.typeError(code, x);
 									this.put(0, NULL);
 									break;
 								}
@@ -3615,9 +3766,7 @@ const Engel = (() =>
 							{
 								if (!this.isNum(x))
 								{
-									this.error({
-										'en': `Cannot return negative value of type ${this.typeName(x)}.`,
-									});
+									this.typeError(code, x);
 									this.put(0, NULL);
 									break;
 								}
@@ -3628,9 +3777,7 @@ const Engel = (() =>
 							{
 								if (x.type !== ValueType.INT)
 								{
-									this.error({
-										'en': `Cannot return inverse value of type ${this.typeName(x)}.`,
-									});
+									this.typeError(code, x);
 									this.put(0, NULL);
 									break;
 								}
