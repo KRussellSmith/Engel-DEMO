@@ -9,7 +9,7 @@
 </head>
 
 <body>
-	<pre id='editor'><code contenteditable='true'>import io
+	<pre id='editor'><code contenteditable='true' spellcheck='false' autocomplete='off'>import io
 `The following class shows
  closures and operator overloading:
 .`
@@ -36,6 +36,7 @@ dec integer = (num) ->
 	}
 }
 dec twenty = integer(20)
+io.clear()
 io.print('20 + 50 = #{twenty + 50}') ; 70</code></pre>
 	<div id='terminal'></div>
 	<svg id='run' viewBox='0 0 100 100'>
@@ -46,13 +47,8 @@ io.print('20 + 50 = #{twenty + 50}') ; 70</code></pre>
 			L 35 70
 			Z'/>
 	</svg>
-	<script>
-		
-		//window.setInterval(() => terminal.write('<p>foo</p>'), 200);
-	</script>
 	<script src='main.js'></script>
 	
-	<script src='highlighter.js' type='module'></script>
 	<script type='module'>
 		import { highlight } from './highlighter.js';
 		import { Caret } from './caret.js';
@@ -61,17 +57,24 @@ io.print('20 + 50 = #{twenty + 50}') ; 70</code></pre>
 			const editor = document.querySelector('#editor code');
 			const caret = new Caret(editor);
 			highlight(editor);
-			
-			// Using the 'input' event listener causes issues (i.d. the inputted character being doubled.)
-			editor.addEventListener('input', e =>
+			(() =>
 			{
-				highlight(editor);
-				e.preventDefault();
-			});
+				let debounce;
+				editor.addEventListener('input', e =>
+				{
+					clearTimeout(debounce);
+					debounce = setTimeout(() =>
+					{
+						highlight(editor);
+					}, 100);
+					e.preventDefault();
+				});
+			})();
 			editor.addEventListener('keydown', e =>
 			{
 				const TAB   = 9;
 				const ENTER = 13;
+				const SPACE = 32;
 				switch (e.keyCode)
 				{
 					case TAB:

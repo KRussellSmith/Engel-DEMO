@@ -1,5 +1,5 @@
 import {Caret} from './caret.js';
-export function highlight(editor)
+export const highlight = (editor) =>
 {
 	const keywords = [
 		'if',
