@@ -1,3 +1,23 @@
+const terminal = {
+	console: document.querySelector('#terminal'),
+	write(txt)
+	{
+		const el = document.createElement('pre');
+		el.innerText = txt;
+		this.console.appendChild(el);
+		el.scrollIntoView(true);
+	},
+};
+const editor = document.querySelector('#editor');
+editor.addEventListener('keydown', e =>
+{
+	const TAB = 9;
+	if (e.keyCode === TAB)
+	{
+		document.execCommand('insertHTML', false, '&#009');
+		e.preventDefault();
+	}
+});
 const Engel = (() =>
 {
 	const Enum = (...args) =>
@@ -171,11 +191,26 @@ const Engel = (() =>
 				},
 				Value(ValueType.NATIVE, (vm, args) =>
 				{
-				   for (let i = vm.top - args; i <= vm.top - 1; ++i)
-				   {
-				      console.log(vm.toStr(vm.stack[i]));
-				   }
-				   return NULL;
+					for (let i = vm.top - args; i <= vm.top - 1; ++i)
+					{
+						terminal.write(vm.toStr(vm.stack[i]));
+					}
+					return NULL;
+				})),
+				Native({
+					'en': 'clear',
+					'es': 'limpia',
+					'fr': 'essuyez',
+					'de': 'wischen',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					const texts = terminal.console.querySelectorAll('*');
+					for (const text of texts)
+					{
+						terminal.console.removeChild(text);
+					}
+					return NULL;
 				})),
 			],
 			'krono': [
@@ -283,29 +318,34 @@ const Engel = (() =>
 		return result;
 	})();
 	const op = Enum(
-		'ADD',       'SUB',        'MUL',
-		'DIV',       'EXP',        'LOAD',
-		'LS',        'RS',         'BAND',
-		'BOR',       'XOR',        'BNOT',
-		'NEG',       'NOT',        'MOD',
-		'INC',       'DEC',        'CONST',
-		'TRUE',      'FALSE',      'NULL',
-		'JMP',       'AND',        'OR',
-		'CND',       'CND_NOT',    'POP',
-		'EMIT',      'CONCAT',     'TO_STR',
-		'STORE',     'GET',        'LT',
-		'GT',        'LE',         'GE',
-		'EQUIV',     'NOT_EQUIV',  'SET_LOCAL',
-		'GET_LOCAL', 'SET_GLOBAL', 'ERUPT',
-		'DUP',       'CLOSURE',    'CALL',
-		'IMPORT',    'EXPORT',     'DEF_VAR',
-		'DEF_CONST', 'GET_GLOBAL', 'CLOSE',
-		'GET_UPVAL', 'SET_UPVAL',  'GOTO',
-		'ROT2',      'ROT3',       'ROT4',
-		'ARRAY',     'HASH',       'DUMP',
-		'SUBSCRIPT', 'OBJ',        'GET_PROP',
-		'SET_PROP',  'SET_SUBSET', 'METHOD',
-		'TO_STR',    'CONCAT',     'JMP_IF_NULL',
+		'ADD',       'SUB',           'MUL',
+		'DIV',       'EXP',           'LOAD',
+		'LS',        'RS',            'BAND',
+		'BOR',       'XOR',           'BNOT',
+		'NEG',       'NOT',           'MOD',
+		'INC',       'DEC',           'CONST',
+		'TRUE',      'FALSE',         'NULL',
+		'JMP',       'AND',           'OR',
+		'CND',       'CND_NOT',       'POP',
+		'EMIT',      'CONCAT',        'TO_STR',
+		'STORE',     'GET',           'LT',
+		'GT',        'LE',            'GE',
+		'EQUIV',     'NOT_EQUIV',     'SET_LOCAL',
+		'GET_LOCAL', 'SET_GLOBAL',    'ERUPT',
+		'DUP',       'CLOSURE',       'CALL',
+		'IMPORT',    'EXPORT',        'DEF_VAR',
+		'DEF_CONST', 'GET_GLOBAL',    'CLOSE',
+		'GET_UPVAL', 'SET_UPVAL',     'GOTO',
+		'ROT2',      'ROT3',          'ROT4',
+		'ARRAY',     'HASH',          'DUMP',
+		'SUBSCRIPT', 'OBJ',           'GET_PROP',
+		'SET_PROP',  'SET_SUBSCRIPT', 'METHOD',
+		'TO_STR',    'CONCAT',        'JMP_IF_NULL',
+		'I_ADD',     'I_XOR',         'I_BOR',
+		'I_BAND',    'I_SUB',         'I_MUL',
+		'I_DIV',     'I_EXP',         'I_MOD',
+		'I_LS',      'I_RS',          'POS',
+		'INC',       'DEC',           'COALESC',
 		'RETURN');
 	
 	const compile = (() =>
@@ -317,7 +357,8 @@ const Engel = (() =>
 			'BAND',      'BOR',        'ADD_SET',
 			'SUB_SET',   'MUL_SET',    'DIV_SET',
 			'EXP_SET',   'MOD_SET',    'LS_SET',
-			'RS_SET',    'STRING',     'INTERP',
+			'RS_SET',    'XOR_SET',    'BOR_SET',
+			'BAND_SET',  'STRING',     'INTERP',
 			'REAL',      'INT',        'ID',
 			'ENDL',      'LPAREN',     'RPAREN',
 			'TRUE',      'FALSE',      'AND',
@@ -337,45 +378,67 @@ const Engel = (() =>
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
-		   column: lexer.col,
+		   col: lexer.col,
 		   value: value === null ? lexer.source.substring(lexer.start, lexer.curr) : value,
 		   str()
 		   {
 		      return `[${TokenType[this.type]}, '${this.value}']`;
 		   }
 		});
-		const lexer = source =>
+		const lexer = (source, lang) =>
 		{
 			const keywords = {
-				'if':     TokenType.IF,
-				'else':   TokenType.ELSE,
-				'true':   TokenType.TRUE,
-				'false':  TokenType.FALSE,
-				'null':   TokenType.NULL,
-				'jump':   TokenType.CONTINUE,
-				'break':  TokenType.BREAK,
-				'while':  TokenType.WHILE,
-				'for':    TokenType.FOR,
-				'match':  TokenType.MATCH,
-				'return': TokenType.RETURN,
-				'this':   TokenType.THIS,
-				'call':   TokenType.CALL,
-				'let':    TokenType.LET,
-				'dec':    TokenType.DEC,
-				'import': TokenType.IMPORT,
-				'in':     TokenType.IN,
+				'en': {
+					'if':     TokenType.IF,
+					'else':   TokenType.ELSE,
+					'true':   TokenType.TRUE,
+					'false':  TokenType.FALSE,
+					'null':   TokenType.NULL,
+					'jump':   TokenType.CONTINUE,
+					'break':  TokenType.BREAK,
+					'while':  TokenType.WHILE,
+					'for':    TokenType.FOR,
+					'match':  TokenType.MATCH,
+					'return': TokenType.RETURN,
+					'this':   TokenType.THIS,
+					'call':   TokenType.CALL,
+					'let':    TokenType.LET,
+					'dec':    TokenType.DEC,
+					'import': TokenType.IMPORT,
+					'in':     TokenType.IN,
+				},
+				'es': {
+					'si':       TokenType.IF,
+					'sino':     TokenType.ELSE,
+					'verdad':   TokenType.TRUE,
+					'falso':    TokenType.FALSE,
+					'nulo':     TokenType.NULL,
+					'salta':    TokenType.CONTINUE,
+					'sale':     TokenType.BREAK,
+					'mientras': TokenType.WHILE,
+					'por':      TokenType.FOR,
+					'coincide': TokenType.MATCH,
+					'returna':  TokenType.RETURN,
+					'esto':     TokenType.THIS,
+					'lamma':    TokenType.CALL,
+					'deja':     TokenType.LET,
+					'dec':      TokenType.DEC,
+					'importa':  TokenType.IMPORT,
+					'en':       TokenType.IN,
+				},
 			};
 			const Lexer = {
 				source,
 				line: 1,
-				column: 1,
+				col: 1,
 				start: 0,
 				curr: 0,
 				interps: [],
+				lang,
 				newLine()
 				{
 					++this.line;
-					this.column = 1;
+					this.col = 1;
 				},
 				fin()
 				{
@@ -383,7 +446,7 @@ const Engel = (() =>
 				},
 				advance()
 				{
-					++this.column;
+					++this.col;
 					return this.source[this.curr++];
 				},
 				look()
@@ -454,7 +517,9 @@ const Engel = (() =>
 					{
 						if (this.fin())
 						{
-							return this.error('Unterminated string!');
+							return this.error({
+								'en': 'Unterminated string!'
+							});
 						}
 						const curr = this.advance();
 						switch (curr)
@@ -501,7 +566,9 @@ const Engel = (() =>
 									case '\n':
 										break;
 									default:
-										return this.error(`Unrecognized escape: \\${this.look()}`);
+										return this.error({
+											'en': `Unrecognized escape: \\${this.look()}`,
+										});
 									}
 									this.advance();
 									break;
@@ -539,7 +606,9 @@ const Engel = (() =>
 					{
 						if (this.interps.length > 0)
 						{
-							return this.error('Unclosed interpolation!');
+							return this.error({
+								'en': 'Unclosed interpolation!'
+							});
 						}
 						return Token(TokenType.FIN, this);
 					}
@@ -665,7 +734,9 @@ const Engel = (() =>
 							{
 								return Token(TokenType.OBJ_START, this);
 							}
-							return this.error('Unexpected hash (#)');
+							return this.error({
+								'en': 'Unexpected hash (#)',
+							});
 						case '\'':
 							return this.singleString();
 						case '\n':
@@ -730,13 +801,15 @@ const Engel = (() =>
 									this.advance();
 								}
 								const ident = this.source.substring(this.start, this.curr);
-								if (ident in keywords)
+								if (ident in keywords[this.lang])
 								{
-									return Token(keywords[ident], this);
+									return Token(keywords[this.lang][ident], this);
 								}
 								return Token(TokenType.ID, this);
 							}
-							return this.error(`Unrecognized character: '${char}'`);
+							return this.error({
+								'en': `Unrecognized character: '${char}'`,
+							});
 						}
 					}
 				},
@@ -745,16 +818,9 @@ const Engel = (() =>
 		};
 		
 		const NodeType = Enum(
-			'ADD',        'SUB',           'MUL',
-			'DIV',        'EXP',           'MOD',
-			'LS',         'RS',            'XOR',
-			'BAND',       'BOR',           'BNOT',
-			'NEG',        'ADD_SET',       'GROUP',
-			'SUB_SET',    'MUL_SET',       'DIV_SET',
-			'EXP_SET',    'MOD_SET',       'LS_SET',
-			'RS_SET',     'STRING',        'INTERP',
+			'BINARY',     'UNARY',         'GROUP',
+			'STRING',     'INTERP',        'NULL',
 			'REAL',       'INT',           'GET',
-			'ENDL',       'LPAREN',        'RPAREN',
 			'TRUE',       'FALSE',         'AND',
 			'OR',         'ELSE',          'OPTIONAL',
 			'IF',         'SET',           'LBRACE',
@@ -764,7 +830,7 @@ const Engel = (() =>
 			'THIS',       'CALL',          'MATCH',
 			'RETURN',     'DECLARE',       'BLOCK',
 			'FUNC_BLOCK', 'FUNC',          'HASH',
-			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIG N',
+			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
 			'OBJ',        'EXPR',          'FUNC_CALL',
 			'ARRAY',      'IMPORT',        'GET_PROP',
 			'SET_PROP',   'FIN');
@@ -779,15 +845,23 @@ const Engel = (() =>
 					value: token.value,
 				}),
 				Nilary: base,
-				Unary: (type, value, line) => ({
+				Unary: (type, value, line = 0) => ({
 					...base(type, line),
-					value
+					value,
 				}),
-				Binary: (type, left, right, line) => ({
+				UnaryOp: (op, value, line = 0) => ({
+					...base(NodeType.UNARY, line),
+					value, op,
+				}),
+				Binary: (type, left, right, line = 0) => ({
 					...base(type, line),
 					left, right,
 				}),
-				Trinary: (type, left, middle, right, line) => ({
+				BinaryOp: (op, left, right, line = 0) => ({
+					...base(NodeType.BINARY, line),
+					left, right, op,
+				}),
+				Trinary: (type, left, middle, right, line = 0) => ({
 					...base(type, line),
 				}),
 				Get: (token) => ({
@@ -870,9 +944,12 @@ const Engel = (() =>
 				Method: (name = '', args = [], body) => ({
 					name, args, body,
 				}),
-				Obj: (fields = [], methods = [], line = 0) => ({
+				Operator: (op, arg, body) => ({
+					op, arg, body,
+				}),
+				Obj: (fields = [], methods = [], operators = [], line = 0) => ({
 					...base(NodeType.OBJ, line),
-					fields, methods,
+					fields, methods, operators,
 				}),
 				GetProp: (left, right, line = 0) => ({
 					...base(NodeType.GET_PROP, line),
@@ -882,22 +959,21 @@ const Engel = (() =>
 					...base(NodeType.SET_PROP, line),
 					obj, value, op,
 				}),
-				SetSubscript: (map, name = '', value, op, line = 0) => ({
+				SetSubscript: (map, value, op, line = 0) => ({
 					...base(NodeType.SET_SUBSCRIPT, line),
-					map, name, value, op,
+					map, value, op,
 				}),
 				For: (local = '', mutable = false, value = null, body = null, line = 0) => ({
 					...base(NodeType.FOR, line),
 					local, value, body, mutable,
 				}),
-				Assign: (left, right, op, line = 0) =>
-				({
+				Assign: (left, right, op, line = 0) => ({
 					...base(NodeType.ASSIGN, line),
 					left, right, op, line,
 				}),
 			}
 		})();
-		const parser = (scan) =>
+		const parser = (scan, lang) =>
 		{
 			const Parser = {
 				curr:  null,
@@ -912,7 +988,8 @@ const Engel = (() =>
 				},
 				error(token, message)
 				{
-					console.log(`[${token.line}:${token.column}] ${message}`);
+					terminal.write(`[${token.line}:${token.col}] ${message[lang]}`);
+					this.panic = true;
 				},
 				sniff(...types)
 				{
@@ -951,7 +1028,9 @@ const Engel = (() =>
 						{
 							if (this.sniff(TokenType.FIN))
 							{
-								this.error('Unclosed function body.');
+								this.error({
+									'en': 'Unclosed function body.'
+								});
 								return null;
 							}
 							if (this.taste(TokenType.RBRACE))
@@ -986,7 +1065,9 @@ const Engel = (() =>
 								args.push(this.expression());
 								this.skipBreaks();
 							} while (this.taste(TokenType.COMMA));
-							this.eat(TokenType.RPAREN, 'Expected closing parenthenis to call.');
+							this.eat(TokenType.RPAREN, {
+								'en': 'Expected closing parenthenis to call.'
+							});
 						}
 						return Node.FuncCall(args, node, start.line);
 					}
@@ -1004,12 +1085,16 @@ const Engel = (() =>
 						else if (this.taste(TokenType.LBRACK))
 						{
 							const subscript = this.expression();
-							this.eat(TokenType.RBRACK, 'Unclosed subscription.');
+							this.eat(TokenType.RBRACK, {
+								'en': 'Unclosed subscription.',
+							});
 							result = Node.Binary(NodeType.SUBSCRIPT, result, subscript, this.prev.line);
 						}
 						else if (this.taste(TokenType.DOT))
 						{
-							this.eat(TokenType.ID, 'Expected identifier.');
+							this.eat(TokenType.ID, {
+								'en': 'Expected identifier.',
+							});
 							const name = Node.Constant(NodeType.STRING, this.prev);
 							result = Node.GetProp(result, name, this.prev.line);
 						}
@@ -1034,11 +1119,11 @@ const Engel = (() =>
 					}
 					else if (this.taste(TokenType.REAL))
 					{
-					   result = Node.Constant(NodeType.REAL, this.prev);
+						result = Node.Constant(NodeType.REAL, this.prev);
 					}
 					else if (this.taste(TokenType.STRING))
 					{
-					   result = Node.Constant(NodeType.STRING, this.prev);
+						result = Node.Constant(NodeType.STRING, this.prev);
 					}
 					else if (this.taste(TokenType.INTERP))
 					{
@@ -1050,48 +1135,57 @@ const Engel = (() =>
 							const interp = Node.Interpolation(start, value);
 							interps.push(interp);
 						} while (this.taste(TokenType.INTERP));
-						this.eat(TokenType.STRING, 'Expected closing string.');
-					   result = Node.StringInterp(interps, this.prev);
+						this.eat(TokenType.STRING, {
+							'en': 'Expected closing string.',
+						});
+						result = Node.StringInterp(interps, this.prev);
 					}
 					else if (this.taste(TokenType.TRUE))
 					{
-					   result = Node.Nilary(NodeType.TRUE, this.prev.line);
+						result = Node.Nilary(NodeType.TRUE, this.prev.line);
 					}
 					else if (this.taste(TokenType.FALSE))
 					{
-					   result = Node.Nilary(NodeType.FALSE, this.prev.line);
+						result = Node.Nilary(NodeType.FALSE, this.prev.line);
 					}
 					else if (this.taste(TokenType.NULL))
 					{
-					   result = Node.Nilary(NodeType.NULL, this.prev.line);
+						result = Node.Nilary(NodeType.NULL, this.prev.line);
 					}
 					else if (this.taste(TokenType.NULL))
 					{
-					   result = Node.Nilary(NodeType.NULL, this.prev.line);
+						result = Node.Nilary(NodeType.NULL, this.prev.line);
 					}
 					else if (this.taste(TokenType.ID))
 					{
-					   result = Node.Get(this.prev);
+						result = Node.Get(this.prev);
 					}
 					else if (this.taste(TokenType.CALL))
 					{
-					   result = Node.Get(this.prev);
+						result = Node.Get(this.prev);
 					}
 					else if (this.taste(TokenType.THIS))
 					{
-					   result = Node.Get(this.prev);
+						result = Node.Get(this.prev);
 					}
-					else if (this.taste(TokenType.SUB))
+					else if (
+						this.taste(
+							TokenType.SUB,
+							TokenType.NOT,
+							TokenType.SQUIGGLY,
+							TokenType.ADD))
 					{
-					   result = Node.Unary(NodeType.NEG, this.factor());
+						const token = this.prev;
+						this.skipBreaks();
+						result = Node.UnaryOp(token.type, this.factor(), token.line);
 					}
 					else if (this.taste(TokenType.SQUIGGLY))
 					{
-					   result = Node.Unary(NodeType.BNOT, this.factor());
+						result = Node.Unary(this, this.factor());
 					}
 					else if (this.taste(TokenType.NOT))
 					{
-					   result = Node.Unary(NodeType.NOT, this.factor());
+						result = Node.Unary(NodeType.NOT, this.factor());
 					}
 					else if (this.taste(TokenType.LPAREN))
 					{
@@ -1121,11 +1215,15 @@ const Engel = (() =>
 								} while (this.taste(TokenType.COMMA));
 								isFunc = true;
 							}
-							this.eat(TokenType.RPAREN, 'Expected closing parenthensis.');
+							this.eat(TokenType.RPAREN, {
+								'en': 'Expected closing parenthensis.',
+							});
 						}
 						if (isFunc)
 						{
-							this.eat(TokenType.FUNC, 'Expected skinny arrow (->)');
+							this.eat(TokenType.FUNC, {
+								'en': 'Expected skinny arrow (->)',
+							});
 							this.skipBreaks();
 							const body = this.funcBody();
 							result = Node.Func(args, null, body, this.prev.line);
@@ -1161,7 +1259,9 @@ const Engel = (() =>
 								this.skipBreaks();
 							} while (this.taste(TokenType.COMMA));
 							
-							this.eat(TokenType.RBRACK, 'Expected closing bracket to array.');
+							this.eat(TokenType.RBRACK, {
+								'en': 'Expected closing bracket to array.',
+							});
 							result = Node.Array(elements, this.prev.line);
 						}
 					}
@@ -1184,20 +1284,28 @@ const Engel = (() =>
 								}
 								const key = this.expression();
 								this.skipBreaks();
-								this.eat(TokenType.COLON, 'Expected colon (:).');
+								this.eat(TokenType.COLON, {
+									'en': 'Expected colon (:).',
+								});
 								this.skipBreaks();
 								const value = this.expression();
 								elements.push(Node.HashPair(key, value))
 							} while (this.taste(TokenType.COMMA));
 							
-							this.eat(TokenType.RBRACK, 'Expected closing bracket to hashmap.');
+							this.eat(TokenType.RBRACK, {
+								'en': 'Expected closing bracket to hashmap.',
+							});
 							result = Node.Hash(elements, this.prev.line);
 						}
 					}
 					else if (this.taste(TokenType.OBJ_START))
 					{
-						const fields  = [];
-						const methods = [];
+						const fields    = [];
+						const methods   = [];
+						const operators = {
+							unary:  [],
+							binary: [],
+						};
 						this.skipBreaks();
 						if (this.taste(TokenType.RBRACK))
 						{
@@ -1205,52 +1313,156 @@ const Engel = (() =>
 						}
 						else
 						{
+							const ops = [
+								TokenType.ADD,
+								TokenType.SUB,
+								TokenType.MUL,
+								TokenType.MOD,
+								TokenType.DIV,
+								TokenType.EXP,
+								TokenType.LS,
+								TokenType.RS,
+								TokenType.BAND,
+								TokenType.BOR,
+								TokenType.SQUIGGLY,
+								TokenType.ADD_SET,
+								TokenType.SUB_SET,
+								TokenType.MUL_SET,
+								TokenType.MOD_SET,
+								TokenType.DIV_SER,
+								TokenType.EXP_SET,
+								TokenType.LS_SET,
+								TokenType.RS_SET,
+								TokenType.BAND_SET,
+								TokenType.BOR_SET,
+								TokenType.SQUIGGLY_SET,
+								TokenType.LT,
+								TokenType.GT,
+								TokenType.LE,
+								TokenType.GE,
+								TokenType.EQUIV,
+								TokenType.NOT_EQUIV,
+								TokenType.NOT];
 							for (;;)
 							{
 								this.skipBreaks();
 								if (this.sniff(TokenType.FIN))
 								{
-									this.error(start, 'Unclosed object.');
+									this.error(start, {
+										'en': 'Unclosed object.',
+									});
 									break;
 								}
 								if (this.taste(TokenType.RBRACE))
 								{
 									break;
 								}
-								this.eat(TokenType.ID, 'Expected identifier or closing brace.');
-								const name = this.prev.value;
-								this.skipBreaks();
-								if (this.taste(TokenType.SET))
+								if (this.taste(...ops))
 								{
-									this.skipBreaks();
-									fields.push(Node.Field(name, this.expression()));
-								}
-								else if (this.taste(TokenType.LPAREN))
-								{
+									const op = this.prev.type;
 									const args = [];
 									this.skipBreaks();
-									if (!this.taste(TokenType.RPAREN))
+									let arg = null;
+									if (this.taste(TokenType.ID))
 									{
-										do
-										{
-											this.skipBreaks();
-											args.push(this.expression());
-											this.skipBreaks();
-										} while (this.taste(TokenType.COMMA));
-										this.eat(TokenType.RPAREN, 'Expected closing parenthensis.');
+										arg = Node.Get(this.prev);
 									}
-									this.eat(TokenType.FUNC, 'Expected skinny arrow (->)');
+									this.eat(TokenType.FUNC, {
+										'en': 'Expected skinny arrow (->)',
+									});
 									this.skipBreaks();
 									const body = this.funcBody();
-									methods.push(Node.Method(name, args, body, this.prev.line));
+									const operator = Node.Operator(op, arg, body, this.prev.line);
+									if (arg === null)
+									{
+										for (const el of operators.unary)
+										{
+											if (el.op === operator.op)
+											{
+												this.error(this.prev, {
+													'en': 'Operator already overloaded'
+												});
+											}
+										}
+										operators.unary.push(operator);
+									}
+									else
+									{
+										for (const el of operators.binary)
+										{
+											if (el.op === operator.op)
+											{
+												this.error(this.prev, {
+													'en': 'Operator already overloaded'
+												});
+											}
+										}
+										operators.binary.push(operator);
+									}
 								}
 								else
 								{
-									this.error('Invalid object statement.');
-									break;
+									this.eat(TokenType.ID, {
+										'en': 'Expected identifier or closing brace.'
+									});
+									const name = this.prev;
+									for (const field of fields)
+									{
+										if (field.name === name.value)
+										{
+											this.error(name, {
+												'en': `${name.value} already defined in object,`,
+											})
+										}
+									}
+									for (const method of methods)
+									{
+										if (method.name === name.value)
+										{
+											this.error(name, {
+												'en': `${name.value} already defined in object,`,
+											});
+										}
+									}
+									this.skipBreaks();
+									if (this.taste(TokenType.SET))
+									{
+										this.skipBreaks();
+										fields.push(Node.Field(name, this.expression()));
+									}
+									else if (this.taste(TokenType.LPAREN))
+									{
+										const args = [];
+										this.skipBreaks();
+										if (!this.taste(TokenType.RPAREN))
+										{
+											do
+											{
+												this.skipBreaks();
+												args.push(this.expression());
+												this.skipBreaks();
+											} while (this.taste(TokenType.COMMA));
+											this.eat(TokenType.RPAREN, {
+												'en': 'Expected closing parenthensis.',
+											});
+										}
+										this.eat(TokenType.FUNC, {
+											'en': 'Expected skinny arrow (->)',
+										});
+										this.skipBreaks();
+										const body = this.funcBody();
+										methods.push(Node.Method(name, args, body, this.prev.line));
+									}
+									else
+									{
+										this.error({
+											'en': 'Invalid object statement.'
+										});
+										break;
+									}
 								}
 							}
-							result = Node.Obj(fields, methods, this.prev.line);
+							result = Node.Obj(fields, methods, [...operators.binary, ...operators.unary], this.prev.line);
 						}
 					}
 					else if (this.taste(TokenType.MATCH))
@@ -1259,14 +1471,18 @@ const Engel = (() =>
 						this.skipBreaks();
 						const comp = this.expression();
 						this.skipBreaks();
-						this.eat(TokenType.LBRACE, 'Expected opening brace ({).');
+						this.eat(TokenType.LBRACE, {
+							'en': 'Expected opening brace ({).',
+						});
 						const cases = [];
 						for (;;)
 						{
 							this.skipBreaks();
 							if (this.taste(TokenType.FIN))
 							{
-								this.error(start, 'Unclosed match.');
+								this.error(start, {
+									'en': 'Unclosed match.'
+								});
 								break;
 							}
 							if (this.taste(TokenType.RBRACE))
@@ -1281,7 +1497,9 @@ const Engel = (() =>
 								checks.push(expr);
 								this.skipBreaks();
 							} while (this.taste(TokenType.COMMA));
-							this.eat(TokenType.FAT_ARROW, 'Expected fat arrow (=>).');
+							this.eat(TokenType.FAT_ARROW, {
+								'en': 'Expected fat arrow (=>).',
+							});
 							this.skipBreaks();
 							const then = this.expression();
 							const curr = Node.Case(checks, then);
@@ -1298,7 +1516,9 @@ const Engel = (() =>
 					}
 					else
 					{
-						this.error(this.curr, 'Invalid expression.');
+						this.error(this.curr, {
+							'en': 'Invalid expression.',
+						});
 						this.advance();
 						return null;
 					}
@@ -1307,12 +1527,12 @@ const Engel = (() =>
 				exponentation()
 				{
 					let result = this.factor();
-					if (
-						this.taste(TokenType.EXP))
+					if (this.taste(TokenType.EXP))
 					{
+						const start = this.prev;
 						this.skipBreaks();
 						const right = this.exponentation();
-						result = Node.Binary(NodeType.EXP, result, right);
+						result = Node.BinaryOp(start.type, result, right, start.line);
 					}
 					return result;
 				},
@@ -1320,27 +1540,15 @@ const Engel = (() =>
 				{
 					let result = this.exponentation();
 					while (
-						this.taste(TokenType.MUL) ||
-						this.taste(TokenType.MOD) ||
-						this.taste(TokenType.DIV))
+						this.taste(
+							TokenType.MUL,
+							TokenType.MOD,
+							TokenType.DIV))
 					{
 						const start = this.prev;
 						this.skipBreaks();
 						const right = this.exponentation();
-						let type = null;
-						switch (start.type)
-						{
-							case TokenType.MUL:
-								type = NodeType.MUL;
-								break;
-							case TokenType.MOD:
-								type = NodeType.MOD;
-								break;
-							case TokenType.DIV:
-								type = NodeType.DIV;
-								break;
-						}
-						result = Node.Binary(type, result, right);
+						result = Node.BinaryOp(start.type, result, right, start.line);
 					}
 					return result;
 				},
@@ -1348,23 +1556,14 @@ const Engel = (() =>
 				{
 					let result = this.multiplication();
 					while (
-						this.taste(TokenType.ADD) ||
-						this.taste(TokenType.SUB))
+						this.taste(
+							TokenType.ADD,
+							TokenType.SUB))
 					{
 						const start = this.prev;
 						this.skipBreaks();
 						const right = this.multiplication();
-						let type = null;
-						switch (start.type)
-						{
-							case TokenType.ADD:
-								type = NodeType.ADD;
-								break;
-							case TokenType.SUB:
-								type = NodeType.SUB;
-								break;
-						}
-						result = Node.Binary(type, result, right);
+						result = Node.BinaryOp(start.type, result, right, start.line);
 					}
 					return result;
 				},
@@ -1372,59 +1571,50 @@ const Engel = (() =>
 				{
 					let result = this.addition();
 					while (
-						this.taste(TokenType.LS) ||
-						this.taste(TokenType.RS))
+						this.taste(
+							TokenType.LS,
+							TokenType.RS))
 					{
 						const token = this.prev;
 						this.skipBreaks();
 						const right = this.addition();
-						let type = null;
-						switch (token.type)
-						{
-							case TokenType.LS:
-								type = NodeType.LS;
-								break;
-							case TokenType.RS:
-								type = NodeType.RS;
-								break;
-						}
-						result = Node.Binary(type, result, right);
+						result = Node.BinaryOp(token.type, result, right, token.line);
 					}
 					return result;
 				},
 				band()
 				{
 					let result = this.shift();
-					while (
-						this.taste(TokenType.BAND))
+					while (this.taste(TokenType.BAND))
 					{
+						const token = this.prev;
 						this.skipBreaks();
 						const right = this.shift();
-						result = Node.Binary(NodeType.BAND, result, right);
+						result = Node.BinaryOp(token.type, result, right, token.line);
 					}
 					return result;
 				},
 				xor()
 				{
 					let result = this.band();
-					while (
-						this.taste(TokenType.SQUIGGLY))
+					while (this.taste(TokenType.SQUIGGLY))
 					{
+						const token = this.prev;
 						this.skipBreaks();
 						const right = this.band();
-						result = Node.Binary(NodeType.XOR, result, right);
+						result = Node.BinaryOp(token.type, result, right, token.line);
 					}
 					return result;
 				},
 				bor()
 				{
 					let result = this.xor();
-					while (
-						this.taste(TokenType.BOR))
+					while (this.taste(TokenType.BOR))
 					{
+						const token = this.prev;
 						this.skipBreaks();
 						const right = this.xor();
-						result = Node.Binary(type, result, right);
+						result = Node.BinaryOp(token.type, result, right, token.line);
 					}
 					return result;
 				},
@@ -1437,7 +1627,8 @@ const Engel = (() =>
 						TokenType.LE,
 						TokenType.GE,
 						TokenType.EQUIV,
-						TokenType.NOT_EQUIV];
+						TokenType.NOT_EQUIV,
+						TokenType.IN];
 					if (this.taste(...compare))
 					{
 						const list = []
@@ -1479,7 +1670,9 @@ const Engel = (() =>
 						this.skipBreaks();
 						const condition = this.ifelse();
 						this.skipBreaks();
-						this.eat(TokenType.ELSE, 'Expected else clause.');
+						this.eat(TokenType.ELSE, {
+							'en': 'Expected else clause.',
+						});
 						this.skipBreaks();
 						const other = this.ifelse();
 						return Node.IfElse(condition, result, other);
@@ -1515,12 +1708,13 @@ const Engel = (() =>
 						{
 							result.type = NodeType.PASS;
 							const right = this.assignment();
-							//alert(JSON.stringify(result))
 							return Node.SetProp(result, right, op, this.prev.line);
 						}
 						else if (result.type !== NodeType.GET)
 						{
-							this.error(this.prev, 'Invalid target for assignment.');
+							this.error(this.prev, {
+								'en': 'Invalid target for assignment.'
+							});
 						}
 						const right = this.assignment();
 						return Node.Assign(result, right, op, this.prev.line);
@@ -1533,14 +1727,18 @@ const Engel = (() =>
 				},
 				block()
 				{
-					this.eat(TokenType.LBRACE, 'Expected opening brace.');
+					this.eat(TokenType.LBRACE, {
+						'en': 'Expected opening brace.'
+					});
 					const start = this.curr;
 					const nodes = [];
 					for (;;)
 					{
 						if (this.sniff(TokenType.FIN))
 						{
-							this.error(start, 'Expected closing brace.');
+							this.error(start, {
+								'en': 'Expected closing brace.',
+							});
 							break;
 						}
 						if (this.taste(TokenType.RBRACE))
@@ -1595,14 +1793,18 @@ const Engel = (() =>
 						const start = this.curr;
 						const comp = this.expression();
 						this.skipBreaks();
-						this.eat(TokenType.LBRACE, 'Expected opening brace');
+						this.eat(TokenType.LBRACE, {
+							'en': 'Expected opening brace'
+						});
 						const cases = [];
 						for (;;)
 						{
 							this.skipBreaks();
 							if (this.sniff(TokenType.FIN))
 							{
-								this.error(start, 'Expected closing brace.');
+								this.error(start, {
+									'en': 'Expected closing brace.'
+								});
 								break;
 							}
 							if (this.taste(TokenType.RBRACE))
@@ -1616,7 +1818,9 @@ const Engel = (() =>
 								const expr = this.expression();
 								this.checks.push(expr);
 							} while (this.taste(TokenType.COMMA));
-							this.eat(TokenType.FAT_ARROW, 'Expected fat arrow (=>)');
+							this.eat(TokenType.FAT_ARROW, {
+								'en': 'Expected fat arrow (=>)'
+							});
 							this.skipBreaks();
 							const then = this.statement();
 							const curr = Node.Case(checks, then);
@@ -1659,7 +1863,9 @@ const Engel = (() =>
 						do
 						{
 							this.skipBreaks();
-							this.eat(TokenType.ID, 'Expected identifier.');
+							this.eat(TokenType.ID, {
+								'en': 'Expected identifier.'
+							});
 							const name = this.prev.value;
 							this.skipBreaks();
 							let value = null;
@@ -1679,10 +1885,14 @@ const Engel = (() =>
 						do
 						{
 							this.skipBreaks();
-							this.eat(TokenType.ID, 'Expected identifier.');
+							this.eat(TokenType.ID, {
+								'en': 'Expected identifier.',
+							});
 							const name = this.prev.value;
 							this.skipBreaks();
-							this.eat(TokenType.SET, 'Uninitialized constant.');
+							this.eat(TokenType.SET, {
+								'en': 'Uninitialized constant.',
+							});
 							this.skipBreaks();
 							const value = this.expression();
 							const declare = Node.Declare(name, value);
@@ -1693,7 +1903,9 @@ const Engel = (() =>
 					else if (this.taste(TokenType.IMPORT))
 					{
 						this.skipBreaks();
-						this.eat(TokenType.ID, 'Expected identifier.');
+						this.eat(TokenType.ID, {
+							'en': 'Expected identifier.',
+						});
 						return Node.Unary(NodeType.IMPORT, this.prev.value, this.prev.line);
 					}
 					return this.statement();
@@ -1708,6 +1920,10 @@ const Engel = (() =>
 							return Node.Nilary(NodeType.FIN);
 						}
 						stmt = this.declaration();
+						if (this.panic)
+						{
+							return null;
+						}
 						if (stmt !== null)
 						{
 							return stmt;
@@ -1726,10 +1942,12 @@ const Engel = (() =>
 		});
 		const Func = (name = null) => ({
 			name,
+			arity: 0,
+			spread: false,
 			chunk: Chunk(),
 			upvalues: [],
 		});
-		const compiler = (parser) =>
+		const compiler = (parser, lang) =>
 		{
 			const Local = (name, isConst) => ({
 				name,
@@ -1760,62 +1978,95 @@ const Engel = (() =>
 				};
 				return scope.loop = result;
 			};
-			const setOp = type =>
+			const unOp = type =>
 			{
-			   switch (type)
-			   {
-			      case TokenType.ADD_SET:
-			         return op.ADD;
-			      case TokenType.SUB_SET:
-			         return op.SUB;
-			      case TokenType.MUL_SET:
-			         return op.MUL;
-			      case TokenType.MOD_SET:
-			         return op.MOD;
-			      case TokenType.DIV_SET:
-			         return op.DIV;
-			      case TokenType.EXP_SET:
-			         return op.EXP;
-			      case TokenType.LS_SET:
-			         return op.LS;
-			      case TokenType.RS_SET:
-			         return op.RS;
-			      case TokenType.BAND_SET:
-			         return op.BAND;
-			      case TokenType.BOR_SET:
-			         return op.BOR;
-			      case TokenType.XOR_SET:
-			         return op.XOR;
-			   }
-			};
-			const compOp = type =>
+				switch (type)
+				{
+					case TokenType.ADD:
+						return op.POS;
+					case TokenType.SUB:
+						return op.NEG;
+					case TokenType.NOT:
+						return op.NOT;
+					case TokenType.SQUIGGLY:
+						return op.BNOT;
+				}
+				return null;
+			}
+			const binOp = type =>
 			{
-			   switch (type)
-			   {
-			      case TokenType.LT:
-			         return op.LT;
-			      case TokenType.GT:
-			         return op.GT;
-			      case TokenType.LE:
-			         return op.LE;
-			      case TokenType.GE:
-			         return op.GE;
-			      case TokenType.EQUIV:
-			         return op.EQUIV;
-			      case TokenType.NOT_EQUIV:
-			         return op.NOT_EQUIV;
-			   }
-			   return null;
+				switch (type)
+				{
+					case TokenType.ADD:
+						return op.ADD;
+					case TokenType.SUB:
+						return op.SUB;
+					case TokenType.MUL:
+						return op.MUL;
+					case TokenType.MOD:
+						return op.MOD;
+					case TokenType.DIV:
+						return op.DIV;
+					case TokenType.EXP:
+						return op.EXP;
+					case TokenType.LS:
+						return op.LS;
+					case TokenType.RS:
+						return op.RS;
+					case TokenType.BAND:
+						return op.BAND;
+					case TokenType.BOR:
+						return op.BOR;
+					case TokenType.SQUIGGLY:
+						return op.XOR
+					case TokenType.ADD_SET:
+						return op.I_ADD;
+					case TokenType.SUB_SET:
+						return op.I_SUB;
+					case TokenType.MUL_SET:
+						return op.I_MUL;
+					case TokenType.MOD_SET:
+						return op.I_MOD;
+					case TokenType.DIV_SET:
+						return op.I_DIV;
+					case TokenType.EXP_SET:
+						return op.I_EXP;
+					case TokenType.LS_SET:
+						return op.I_LS;
+					case TokenType.RS_SET:
+						return op.I_RS;
+					case TokenType.BAND_SET:
+						return op.I_BAND;
+					case TokenType.BOR_SET:
+						return op.I_BOR;
+					case TokenType.SQUIGGLY_SET:
+						return op.I_XOR
+					case TokenType.LT:
+						return op.LT;
+					case TokenType.GT:
+						return op.GT;
+					case TokenType.LE:
+						return op.LE;
+					case TokenType.GE:
+						return op.GE;
+					case TokenType.EQUIV:
+						return op.EQUIV;
+					case TokenType.NOT_EQUIV:
+						return op.NOT_EQUIV;
+				}
+				return null;
 			};
 			const Compiler = {
 				curr: null,
+				errored: false, // IDC that this isn't a word.
 				get chunk()
 				{
 					return this.curr.func.chunk;
 				},
 				error(message = '')
 				{
-					console.log(message);
+					terminal.write(message);
+					this.errored = true;
 				},
 				addConst(value)
 				{
@@ -1982,6 +2233,7 @@ const Engel = (() =>
 				globals: [],
 				visit(node)
 				{
+					
 					switch (node.type)
 					{
 						case NodeType.GROUP:
@@ -2025,48 +2277,16 @@ const Engel = (() =>
 						case NodeType.FALSE:
 							this.emit(op.FALSE);
 							break;
-						case NodeType.ADD:
-							this.visitBinary(node, op.ADD);
+						case NodeType.BINARY:
+						{
+							this.visitBinary(node, binOp(node.op));
 							break;
-						case NodeType.SUB:
-							this.visitBinary(node, op.SUB);
+						}
+						case NodeType.UNARY:
+						{
+							this.visitUnary(node, unOp(node.op));
 							break;
-						case NodeType.MUL:
-							this.visitBinary(node, op.MUL);
-							break;
-						case NodeType.MOD:
-							this.visitBinary(node, op.MOD);
-							break;
-						case NodeType.DIV:
-							this.visitBinary(node, op.DIV);
-							break;
-						case NodeType.EXP:
-							this.visitBinary(node, op.EXP);
-							break;
-						case NodeType.LS:
-							this.visitBinary(node, op.LS);
-							break;
-						case NodeType.RS:
-							this.visitBinary(node, op.RS);
-							break;
-						case NodeType.BAND:
-							this.visitBinary(node, op.BAND);
-							break;
-						case NodeType.BOR:
-							this.visitBinary(node, op.BOR);
-							break;
-						case NodeType.XOR:
-							this.visitBinary(node, op.XOR);
-							break;
-						case NodeType.BNOT:
-							this.visitUnary(node, op.BNOT);
-							break;
-						case NodeType.NEG:
-							this.visitUnary(node, op.NEG);
-							break;
-						case NodeType.NOT:
-							this.visitUnary(node, op.NOT);
-							break;
+						}
 						case NodeType.COMP:
 						{
 							this.visit(node.primer)
@@ -2082,7 +2302,7 @@ const Engel = (() =>
 									const comp = node.list[i];
 									this.visitUnary(comp, op.DUP);
 									this.emit(op.ROT3);
-									this.emit(compOp(comp.type));
+									this.emit(binOp(comp.type));
 									if (i < node.list.length - 1)
 									{
 										this.emit(op.AND);
@@ -2264,35 +2484,73 @@ const Engel = (() =>
 						{
 							for (const field of node.fields)
 							{
-								this.emitConst(field.name, ValueType.STRING);
+								this.emitConst(field.name.value, ValueType.STRING);
 								this.visit(field.value);
 							}
 							for (const method of node.methods)
 							{
-								this.emitConst(method.name, ValueType.STRING);
+								this.emitConst(method.name.value, ValueType.STRING);
 								this.curr = CompilerScope(this.curr);
 								this.beginScope();
-								this.addLocal('call', true);
-								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								
 								for (const arg of method.args)
 								{
-								   if (arg.type != NodeType.GET)
+								   if (arg.type !== NodeType.GET)
 								   {
-								      this.error('Invalid expression for function parameter.');
+								      this.error({
+								      	'en': 'Invalid expression for function parameter.'
+								      });
 								   }
 								   this.addLocal(arg.name, false, true);
 								   this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
 								}
+								this.addLocal('call', true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
 								this.addLocal('this', true);
 								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
 								this.visit(method.body);
 								this.endScope();
 								const upvalues = this.curr.upvalues;
 								const result = this.endCompilerScope();
-								if (node.name !== null)
+								result.arity = method.args.length;
+								this.emitClosure(result);
+								for (const upvalue of upvalues)
 								{
-								   result.name = node.name;
+								   this.emit(
+								      upvalue.isLocal ? 1 : 0,
+								      ...this.uLEB(upvalue.index));
 								}
+								this.emit(op.METHOD);
+							}
+							for (const operator of node.operators)
+							{
+								const opcode = (operator.arg !== null) ? binOp(operator.op) : unOp(operator.op);
+								this.emitConst(opcode, ValueType.INT);
+								this.curr = CompilerScope(this.curr);
+								this.beginScope();
+								let arity = 0;
+								if (operator.arg !== null)
+								{
+									arity = 1;
+									const { arg } = operator;
+									if (arg.type !== NodeType.GET)
+									{
+										this.error({
+											'en': 'Invalid expression for operator parameter.'
+										});
+									}
+								   this.addLocal(arg.name, false, true);
+								   this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								}
+								this.addLocal('call', true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								this.addLocal('this', true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								this.visit(operator.body);
+								this.endScope();
+								const upvalues = this.curr.upvalues;
+								const result = this.endCompilerScope();
+								result.arity = arity;
 								this.emitClosure(result);
 								for (const upvalue of upvalues)
 								{
@@ -2304,7 +2562,10 @@ const Engel = (() =>
 							}
 							this.emit(
 								op.OBJ,
-								...this.uLEB(node.methods.length + node.fields.length));
+								...this.uLEB(
+									node.methods.length +
+									node.operators.length +
+									node.fields.length));
 							break;
 						}
 						case NodeType.BLOCK:
@@ -2332,7 +2593,9 @@ const Engel = (() =>
 										}
 										if (declaration.name === local.name)
 										{
-											this.error(`${declaration.name} already defined in scope.`);
+											this.error({
+												'en': `${declaration.name} already defined in scope.`,
+											});
 											break;
 										}
 									}
@@ -2378,7 +2641,9 @@ const Engel = (() =>
 							{
 								if (this.curr.locals[depth].depth === -1)
 								{
-									this.error(`Cannot read ${node.name} within its own declaration.`);
+									this.error({
+										'en': `Cannot read ${node.name} within its own declaration.`
+									});
 									break;
 								}
 								this.emit(
@@ -2408,7 +2673,9 @@ const Engel = (() =>
 							{
 								if (this.curr.locals[depth].isConst)
 								{
-									this.error(`Cannot define constant ${name} after declaration.`);
+									this.error({
+										'en': `Cannot define constant ${name} after declaration.`,
+									});
 								}
 								if (node.op !== TokenType.SET)
 								{
@@ -2458,7 +2725,7 @@ const Engel = (() =>
 										op.GET_GLOBAL,
 										...this.addConst(Value(NodeType.STRING, name)));
 									this.visit(node.right);
-									this.emit(setOp(node.op))
+									this.emit(tokenOp(node.op))
 								}
 								else
 								{
@@ -2474,15 +2741,40 @@ const Engel = (() =>
 							}
 							break;
 						}
+						case NodeType.SUBSCRIPT:
+						{
+							this.visitBinary(node, op.SUBSCRIPT);
+							break;
+						}
+						case NodeType.SET_SUBSCRIPT:
+						{
+							if (node.op !== TokenType.SET)
+							{
+								// Get the property:
+								this.visit(node.map);
+								this.emit(op.SUBSCRIPT);
+								// Get the right-hand, perform operation:
+								this.visit(node.value);
+								this.emit(tokenOp(node.op));
+								
+								this.visit(node.map);
+								this.emit(op.SET_SUBSCRIPT);
+							}
+							else
+							{
+								this.visit(node.value);
+								this.visit(node.map);
+								this.emit(op.SET_SUBSCRIPT);
+							}
+							break;
+						}
 						case NodeType.GET_PROP:
 						{
-							//alert(JSON.stringify(node));
 							this.visitBinary(node, op.GET_PROP);
 							break;
 						}
 						case NodeType.SET_PROP:
 						{
-							//alert(JSON.stringify(node));
 							if (node.op !== TokenType.SET)
 							{
 								// Get the property:
@@ -2490,7 +2782,7 @@ const Engel = (() =>
 								this.emit(op.GET_PROP);
 								// Get the right-hand, perform operation:
 								this.visit(node.value);
-								this.emit(setOp(node.op));
+								this.emit(tokenOp(node.op));
 								
 								this.visit(node.obj);
 								this.emit(op.SET_PROP);
@@ -2515,15 +2807,17 @@ const Engel = (() =>
 						{
 							this.curr = CompilerScope(this.curr);
 							this.beginScope();
-							this.addLocal('call', true, true);
+							this.addLocal('call', true);
 							this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
 							for (const arg of node.args)
 							{
 								if (arg.type != NodeType.GET)
 								{
-									this.error('Invalid expression for function parameter.');
+									this.error({
+										'en': 'Invalid expression for function parameter.'
+									});
 								}
-								this.addLocal(arg.name, false, true);
+								this.addLocal(arg.name, true);
 								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
 							}
 							this.visit(node.body);
@@ -2534,6 +2828,7 @@ const Engel = (() =>
 							{
 								result.name = node.name;
 							}
+							result.arity = node.args.length;
 							this.emitClosure(result);
 							for (const upvalue of upvalues)
 							{
@@ -2560,11 +2855,6 @@ const Engel = (() =>
 								...this.uLEB(node.args.length));
 							break;
 						}
-						case NodeType.SUBSCRIPT:
-						{
-							this.visitBinary(node, op.SUBSCRIPT);
-							break;
-						}
 						case NodeType.IMPORT:
 						{
 							this.emitConst(node.value, ValueType.STRING);
@@ -2573,7 +2863,6 @@ const Engel = (() =>
 						}
 						case NodeType.PASS:
 						{
-							//alert(JSON.stringify(node));
 							this.visit(node.left);
 							this.visit(node.right);
 							break;
@@ -2587,34 +2876,34 @@ const Engel = (() =>
 					for (;;)
 					{
 						const node = parse();
-						if (node.type === NodeType.FIN)
+						if (node === null)
+						{
+							this.errored = true;
+							continue;
+						}
+						else if (node.type === NodeType.FIN)
 						{
 							break;
 						}
 						this.visit(node);
 					}
-					return this.endCompilerScope();
+					return this.errored ? null : this.endCompilerScope();
 				},
 			};
 			return () => Compiler.compile.call(Compiler);
 		};
 		
-		return source => compiler(parser(lexer(source)))();
+		return (source, lang) => compiler(parser(lexer(source, lang), lang), lang)();
 	})();
 	const run = (() =>
 	{
 		const interpreter = (chunk, lang) =>
 		{
+			
 			const Frame = (func, slot = 0) => ({
 				func,
 				ip: 0,
 				slot,
-			});
-			const Upvalue = (value) =>
-			({
-				value,
-				next:   null,
-				closed: null
 			});
 			const Method = (func, obj = null) =>
 			({
@@ -2638,7 +2927,8 @@ const Engel = (() =>
 			}
 			const Global = (value, isConst = true) => ({
 				value, isConst,
-			})
+			});
+			const NULL = Value(ValueType.NULL, null);
 			const Interpreter = {
 				stack:        [],
 				globals:      {},
@@ -2646,8 +2936,17 @@ const Engel = (() =>
 				depth:        0,
 				top:          0,
 				openUpvalues: null,
-				currError:     null,
+				currError:    null,
 				lang,
+				Upvalue(location)
+				{
+					return {
+					location,
+					value: this.stack[location],
+					next:   null,
+					closed: null,
+					};
+				},
 				addFrame(frame)
 				{
 					this.frames[this.depth++] = frame;
@@ -2702,9 +3001,13 @@ const Engel = (() =>
 						(this.advance() << 8)  |
 						(this.advance()));
 				},
-				error(message = '')
+				error(messages)
 				{
-					this.currError = message;
+					this.currError = messages;
+				},
+				assert(cond, messages)
+				{
+					
 				},
 				call(func, args)
 				{
@@ -2717,13 +3020,56 @@ const Engel = (() =>
 					{
 						case ValueType.FUNC:
 						{
-							return this.call(val.value, args);
+							const func = val.value;
+							const { arity } = func;
+							if (args < arity)
+							{
+							   this.error({
+							      'en': `Too few arguments (${arity} expected).`,
+							   });
+							   return false;
+							}
+							if (func.spread)
+							{
+							   return this.call(func, arity);
+							}
+							else
+							{
+							   if (args > arity)
+							   {
+							      this.error({
+							         'en': `Too many arguments (${arity} expected).`,
+							      });
+							   }
+							   return this.call(func, args);
+							}
 						}
 						case ValueType.METHOD:
 						{
 							const method = val.value;
-							this.push(method.obj)
-							this.frames[this.depth++] = Frame(method.func, this.top - args - 2);
+							const { arity } = method.func;
+							this.push(method.obj);
+							if (args < arity)
+							{
+								this.error({
+									'en': `Too few arguments (${arity} expected).`,
+								});
+								return false;
+							}
+							if (method.func.spread)
+							{
+								this.frames[this.depth++] = Frame(method.func, this.top - arity - 2);
+							}
+							else
+							{
+								if (args > arity)
+								{
+									this.error({
+										'en': `Too many arguments (${arity} expected).`,
+									});
+								}
+								this.frames[this.depth++] = Frame(method.func, this.top - args - 2);
+							}
 							return true;
 						}
 						case ValueType.NATIVE:
@@ -2761,8 +3107,8 @@ const Engel = (() =>
 					{
 						return upvalue;
 					}
-					const newUpvalue = Upvalue(local);
-					newUpvalue.next = Upvalue(local);
+					const newUpvalue = this.Upvalue(local);
+					newUpvalue.next = this.Upvalue(local);
 					
 					if (prev == null)
 					{
@@ -2772,16 +3118,15 @@ const Engel = (() =>
 					{
 						prev.next = newUpvalue;
 					}
+					return newUpvalue;
 				},
 				closeUpvalues(last = this.top - 1)
 				{
 					while (
 						this.openUpvalues !== null &&
-						this.stack.indexOf(this.openUpvalues.value) >= last)
+						this.openUpvalues.location >= last)
 						{
-							const upvalue  = this.openUpvalues = Upvalue(null);
-							upvalue.closed = upvalue.value;
-							upvalue.value =  upvalue.closed;
+							const upvalue  = this.openUpvalues;
 							this.openUpvalues = upvalue.next;
 						}
 				},
@@ -2818,7 +3163,6 @@ const Engel = (() =>
 					const key   = this.peek(0);
 					switch (value.type)
 					{
-						case ValueType.STRING:
 						case ValueType.ARRAY:
 						{
 							if (key.type === ValueType.INT)
@@ -2832,6 +3176,26 @@ const Engel = (() =>
 									break;
 								}
 								result = value.value[key.value];
+								break;
+							}
+							this.error({
+								'en': `Can only subscript value of type ${this.typeName(value)} with an integer.`
+							});
+							break;
+						}
+						case ValueType.STRING:
+						{
+							if (key.type === ValueType.INT)
+							{
+								const index = key.value;
+								if (index < 0 || index >= key.length)
+								{
+									this.error({
+										'en': `Value ${index} outside of subscriptable range.`
+										});
+									break;
+								}
+								result = Value(ValueType.STRING, value.value[key.value]);
 								break;
 							}
 							this.error({
@@ -2865,13 +3229,12 @@ const Engel = (() =>
 				},
 				subscriptSet()
 				{
-					const value  = this.peek(2);
-					const key    = this.peek(1);
-					const setVal = this.peek(0);
+					const key    = this.peek(0);
+					const value  = this.peek(1);
+					const setVal = this.peek(2);
 					let result = NULL;
 					switch (value.type)
 					{
-						case ValueType.STRING:
 						case ValueType.ARRAY:
 						{
 							if (key.type === ValueType.INT)
@@ -2884,7 +3247,7 @@ const Engel = (() =>
 										});
 									break;
 								}
-								result = value.value[key.value];
+								result = value.value[key.value] = setVal;
 								break;
 							}
 							this.error({
@@ -2921,6 +3284,12 @@ const Engel = (() =>
 							return value.value.toString();
 						case ValueType.NULL:
 							return 'null';
+						case ValueType.BOOL:
+							return value.value ? 'true' : 'false';
+						case ValueType.FUNCTION:
+						case ValueType.METHOD:
+						case ValueType.NATIVE:
+							return '<function>';
 					}
 					return '';
 				},
@@ -2935,6 +3304,7 @@ const Engel = (() =>
 						[ValueType.NATIVE]:   'function',
 						[ValueType.NULL]:     'null',
 						[ValueType.BOOL]:     'Boolean',
+						[ValueType.OBJ]:      'obj',
 					}[val.type];
 				},
 				importNative(lib = '')
@@ -2943,23 +3313,58 @@ const Engel = (() =>
 					{
 						return NativeLibs[lib]['.' + this.lang];
 					}
-					this.error(`Library '${lib}' not found.`);
+					this.error({
+						'en': `Library '${lib}' not found.`,
+					});
 				},
-				interpret()
+				
+				callBinOp(code)
 				{
-					const NULL = Value(ValueType.NULL, null);
-					this.addFrame(Frame(chunk));
-					const binary = (func) =>
+					const a = this.peek(1);
+					const b = this.peek(0)
+					if (code in a.value.methods)
 					{
-						const b = this.pop();
-						const a = this.pop();
-						this.push(func(a.value, b.value));
-					};
-					const numOp = (func, name = '') =>
+						this.put(1, b);
+						this.put(0, a.value.methods[code]);
+						this.callVal(this.peek(0), 1);
+						return;
+					}
+					else
 					{
-						if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
+						this.error({
+							'en': `Undefined operation for object.`,
+						})
+						this.pop();
+						this.put(0, NULL);
+					}
+				},
+				callUnOp(code)
+				{
+					const obj = this.peek(0);
+					if (code in obj.value.methods)
+					{
+						this.put(0, obj.value.methods[code]);
+						this.callVal(this.peek(0), 0);
+					}
+					else
+					{
+						this.error({ 
+							'en': `Undefined operation for object.`,
+						});
+						this.put(0, NULL);
+					}
+				},
+				binary(code)
+				{
+					if (this.peek(1).type === ValueType.OBJ)
+					{
+						this.callBinOp(code);
+					}
+						else if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
 						{
-							this.error(`${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`);
+							this.error({
+								'en': `${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`,
+							});
 							this.pop();
 							this.pop();
 							this.push(NULL);
@@ -2970,49 +3375,281 @@ const Engel = (() =>
 								this.peek(0).type === ValueType.INT &&
 								this.peek(0).type === this.peek(1).type)
 								? ValueType.INT : ValueType.REAL;
+							const a = this.peek(1).value;
+							const b = this.peek(0).value;
+							let result = 0;
+							switch (code)
+							{
+								case op.ADD:
+									result = a + b;
+									break;
+								case op.SUB:
+									result = a - b;
+									break;
+								case op.MUL:
+									result = a * b;
+									break;
+								case op.MOD:
+									result = a % b;
+									break;
+								case op.DIV:
+									result = a / b;
+									break;
+								case op.EXP:
+									result = a ** b;
+									break;
+							}
 							if (type === ValueType.INT)
 							{
-								binary((a, b) => Value(type, func(a, b) | 0));
+								result = result | 0;
 							}
-							else
-							{
-								binary((a, b) => Value(type, func(a, b)));
-							}
+							this.pop();
+							this.put(0, Value(type, result));
 						}
-					};
-					const intOp = (func, name = '') =>
+				},
+				binaryInt(code)
+				{
+					if (this.peek(1).type === ValueType.OBJ)
 					{
-						if (this.peek(0).type !== ValueType.INT || this.peek(1).type !== ValueType.INT)
+						this.callBinOp(code);
+						return;
+					}
+					else if (this.peek(0).type !== ValueType.INT || this.peek(1).type !== ValueType.INT)
+					{
+						this.error({
+							'en': `${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`
+						});
+						this.pop();
+						this.pop();
+						this.push(NULL)
+					}
+					else
+					{
+						const a = this.peek(1).value;
+						const b = this.peek(0).value;
+						let result = 0;
+						switch (code)
 						{
-							this.error({
-								'en': `${name} is not applicable to types ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`
-							});
-							this.pop();
-							this.pop();
-							this.push(NULL)
+							case op.LS:
+								result = a << b;
+								break;
+							case op.RS:
+								result = a >> b;
+								break;
+							case op.BAND:
+								result = a & b;
+								break;
+							case op.BOR:
+								result = a | b;
+								break;
+							case op.XOR:
+								result = a ^ b;
+								break;
 						}
-						else
+						this.pop();
+						this.put(0, Value(ValueType.INT, result | 0))
+					}
+				},
+				comp(code)
+				{
+					const a = this.peek(1);
+					const b = this.peek(0);
+					if (a.type === ValueType.OBJ)
+					{
+						this.callBinOp(code);
+					}
+					else if (!this.isNum(a) || !this.isNum(b))
+					{
+						this.error({
+							'en': `Expected numeric values for comparision, got ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`,
+						});
+						this.pop();
+						this.put(0, NULL);
+					}
+					else
+					{
+						const result = Value(ValueType.BOOL, false);
+						switch (code)
 						{
-							binary((a, b) => Value(ValueType.INT, func(a, b) | 0));
+							case op.LT:
+								result.value = a.value < b.value;
+								break;
+							case op.GT:
+								result.value = a.value < b.value;
+								break;
+							case op.LE:
+								result.value = a.value <= b.value;
+								break;
+							case op.GE:
+								result.value = a.value >= b.value;
+								break;
+							case op.EQUIV:
+								result.value = this.equiv(a, b);
+								break;
+							case op.NOT_EQUIV:
+								result.value = !this.equiv(a, b);
+								break;
+						}
+						this.pop();
+						this.put(0, result);
+					}
+				},
+				inplace(code)
+				{
+					const a = this.peek(1);
+					const b = this.peek(0);
+					if (a.type === ValueType.OBJ)
+					{
+						this.callBinOp(code);
+					}
+					else if (!this.isNum(a) || !this.isNum(b))
+					{
+						this.error({
+								'en': `Invalid operation (expected numbers, got ${this.typeName(a)} and ${this.typeName(b)}.)`,
+							});
+							this.pop(0);
+							this.put(0, NULL);
+					}
+					else
+					{
+						const valType = (
+							a.type === ValueType.INT &&
+							a.type === b.type) ?
+							ValueType.INT : ValueType.REAL;
+						let result = Value(valType, 0);
+						switch (type)
+						{
+							case op.I_ADD:
+								result.value = a.value + b.value;
+								break;
+							case op.I_SUB:
+								result.value = a.value - b.value;
+								break;
+							case op.I_MUL:
+								result.value = a.value * b.value;
+								break;
+							case op.I_MOD:
+								result.value = a.value % b.value;
+								break;
+							case op.I_DIV:
+								result.value = a.value / b.value;
+								break;
+							case op.I_EXP:
+								result.value = a.value ** b.value;
+								break;
+						}
+						this.pop();
+						this.put(0, result);
+					}
+				},
+				inplaceInt(code)
+				{
+					const a = this.peek(1);
+					const b = this.peek(0);
+					if (a.type === ValueType.OBJ)
+					{
+						this.callBinOp(code)
+					}
+					else if (a.type !== ValueType.INT || b.type !== ValueType.INT)
+					{
+						this.error({
+							'en': `Invalid operation (expected integers, got ${this.typeName(a)} and ${this.typeName(b)}.)`,
+						});
+						this.pop();
+						this.put(0, NULL);
+					}
+					else
+					{
+						let result = Value(ValueType.INT, 0);
+						switch (type)
+						{
+							case op.I_LS:
+								result.value = a.value << b.value;
+								break;
+							case op.I_RS:
+								result.value = a.value >> b.value;
+								break;
+							case op.I_BAND:
+								result.value = a.value & b.value;
+								break;
+							case op.I_BOR:
+								result.value = a.value | b.value;
+								break;
+							case op.I_XOR:
+								result.value = a.value ^ b.value;
+								break;
+						}
+						if (result.type === ValueType.INT)
+						{
+							result.value |= 0;
+						}
+						this.pop();
+						this.put(0, result);
+					}
+				},
+				unary(code)
+				{
+					const x = this.peek(0);
+					if (x.type === ValueType.OBJ)
+					{
+						this.callUnOp(code);
+					}
+					else
+					{
+						switch (code)
+						{
+							case op.POS:
+							{
+								if (!this.isNum(x))
+								{
+									this.error({
+										'en': `Cannot return positive value of type ${this.typeName(x)}.`,
+									});
+									this.put(0, NULL);
+									break;
+								}
+								this.put(0, Value(x.type, +x.value));
+								break;
+							}
+							case op.NEG:
+							{
+								if (!this.isNum(x))
+								{
+									this.error({
+										'en': `Cannot return negative value of type ${this.typeName(x)}.`,
+									});
+									this.put(0, NULL);
+									break;
+								}
+								this.put(0, Value(x.type, -x.value));
+								break;
+							}
+							case op.BNOT:
+							{
+								if (x.type !== ValueType.INT)
+								{
+									this.error({
+										'en': `Cannot return inverse value of type ${this.typeName(x)}.`,
+									});
+									this.put(0, NULL);
+									break;
+								}
+								this.put(0, Value(ValueType.INT, ~x.value));
+								break;
+							}
+							case op.NOT:
+							{
+								this.put(0, Value(ValueType.BOOL, !this.isTrue(x.value)));
+								break;
+							}
 						}
 					}
-					const compOp = (func) =>
-					{
-						if (!this.isNum(this.peek(0)) || !this.isNum(this.peek(1)))
-						{
-							
-							this.error({
-								'en': `Expected numeric values for comparision, got ${this.typeName(this.peek(1))} and ${this.typeName(this.peek(0))}.`,
-							});
-							this.pop();
-							this.pop();
-							this.push(NULL);
-						}
-						else
-						{
-							binary((a, b) => Value(ValueType.BOOL, func(a, b)));
-						}
-					};
+				},
+				interpret()
+				{
+					const NULL = Value(ValueType.NULL, null);
+					this.addFrame(Frame(chunk));
+					
 					let byte;
 					const _include = this.importNative('.include');
 					for (const key in _include)
@@ -3022,14 +3659,16 @@ const Engel = (() =>
 					for (;;)
 					{
 						byte = this.advance();
+						//console.log(op[byte])
 						if (this.depth >= this.frames.length)
 						{
-							this.error('Stack exceeded.');
-							return;
+							this.error({
+								'en': 'Stack exceeded.'
+							});
 						}
 						if (this.currError !== null)
 						{
-							throw(Error(this.currError[this.lang]));
+							terminal.write(this.currError[this.lang])
 							break;
 						}
 						switch (byte)
@@ -3112,20 +3751,22 @@ const Engel = (() =>
 							case op.OBJ:
 							{
 								const len = this.uLEB();
-								const fields = {};
-								const methods = {};
+								const fields    = {};
+								const methods   = {};
 								for (let i = 0; i < len; ++i)
 								{
 									const key = this.stack[this.top - 1 - i * 2 - 1].value;
 									const value = this.stack[this.top - 1 - i * 2];
-									if (value.type === ValueType.METHOD)
+									switch (value.type)
 									{
-										methods[key] = value;
+										case ValueType.METHOD:
+											methods[key] = value;
+											break;
+										default:
+											fields[key] = value;
+											break;
 									}
-									else
-									{
-										fields[key] = value;
-									}
+									
 								}
 								const result = Value(ValueType.OBJ, Obj(fields, methods));
 								for (const key in methods)
@@ -3149,9 +3790,8 @@ const Engel = (() =>
 										'en': `Cannot read property on type ${this.typeName(obj)}.`
 									});
 									this.push(NULL);
-									break;
 								}
-								if (key in obj.value.fields)
+								else if (key in obj.value.fields)
 								{
 									this.push(obj.value.fields[key]);
 								}
@@ -3231,38 +3871,6 @@ const Engel = (() =>
 								else this.globals[name].value = val;
 								break;
 							}
-							case op.LT:
-							{
-								compOp((a, b) => a < b);
-								break;
-							}
-							case op.GT:
-							{
-								compOp((a, b) => a > b);
-								break;
-							}
-							case op.LE:
-							{
-								compOp((a, b) => a <= b);
-								break;
-							}
-							case op.GE:
-							{
-								compOp((a, b) => a >= b);
-								break;
-							}
-							case op.EQUIV:
-							{
-								const result = Value(ValueType.BOOL, this.equiv(this.pop(), this.pop()));
-								this.push(result);
-								break;
-							}
-							case op.NOT_EQUIV:
-							{
-								const result = Value(ValueType.BOOL, !this.equiv(this.pop(), this.pop()));
-								this.push(result);
-								break;
-							}
 							case op.GET_LOCAL:
 							{
 								const index = this.frame.slot + this.uLEB();
@@ -3278,7 +3886,9 @@ const Engel = (() =>
 									const name = this.getConst().value;
 									if (name in this.globals)
 									{
-										this.error(`${name} already declared.`);
+										this.error({
+											'en': `${name} already declared.`,
+										});
 										this.pop();
 									}
 									else
@@ -3292,7 +3902,9 @@ const Engel = (() =>
 								const name = this.getConst().value;
 								if (name in this.globals)
 								{
-									this.error(`${name} already declared.`);
+									this.error({
+										'en': `${name} already declared.`,
+									});
 									this.pop();
 								}
 								else
@@ -3304,39 +3916,7 @@ const Engel = (() =>
 							case op.GET_UPVAL:
 							{
 								const index = this.uLEB();
-								this.push(this.stack[this.frame.slot + index]);
-								break;
-							}
-							case op.NEG:
-							{
-								const val = this.pop();
-								if (!this.isNum(val))
-								{
-									this.error({
-										'en': `Cannot negate value of type ${this.typeName(val.type)}.`,
-									});
-									this.push(NULL);
-								}
-								else
-								{
-									this.push(Value(val.type, -val.value));
-								}
-								break;
-							}
-							case op.BNOT:
-							{
-								const val = this.pop();
-								if (!this.isNum(val))
-								{
-									this.error({
-										'en': `Cannot apply bitwise inverse to value of type ${this.typeName(val.type)}.`,
-									});
-									this.push(NULL);
-								}
-								else
-								{
-									this.push(Value(val.type, ~val.value));
-								}
+								this.push(this.frame.func.upvalues[index].value);
 								break;
 							}
 							case op.ADD:
@@ -3346,49 +3926,66 @@ const Engel = (() =>
 									this.peek(0).type === this.peek(1).type)
 								{
 									binary((a, b) => Value(ValueType.STRING, a + b));
+									break;
 								}
-								else
-								{
-									numOp((a, b) => a + b, 'addition');
-								}
-								break;
+								// Fall-through.
 							}
 							case op.SUB:
-								numOp((a, b) => a - b, 'subtraction');
-								break;
 							case op.MUL:
-								numOp((a, b) => a * b, 'multiplication');
-								break;
 							case op.MOD:
-								numOp((a, b) => a % b, 'modulation');
-								break;
 							case op.DIV:
-								numOp((a, b) => a / b, 'division');
-								break;
 							case op.EXP:
-								numOp((a, b) => a ** b, 'exponentation');
+								this.binary(byte);
 								break;
 							case op.LS:
-								intOp((a, b) => a << b, 'left shift');
-								break;
 							case op.RS:
-								intOp((a, b) => a >> b, 'right shift');
-								break;
 							case op.BAND:
-								intOp((a, b) => a & b, 'bitwise AND');
-								break;
 							case op.BOR:
-								intOp((a, b) => a | b, 'bitwise OR');
-								break;
 							case op.XOR:
-								intOp((a, b) => a ^ b, 'bitwise XOR');
+								this.binaryInt(byte);
 								break;
+							case op.I_ADD:
+							case op.I_SUB:
+							case op.I_MUL:
+							case op.I_MOD:
+							case op.I_DIV:
+							case op.I_EXP:
+								this.inplace(byte);
+								break;
+							case op.I_LS:
+							case op.I_RS:
+							case op.I_BAND:
+							case op.I_BOR:
+							case op.I_XOR:
+								this.inplaceInt(byte);
+								break;
+							case op.LT:
+							case op.GT:
+							case op.LE:
+							case op.GE:
+							case op.EQUIV:
+							case op.NOT_EQUIV:
+								this.comp(byte);
+								break;
+							case op.POS:
+							case op.NEG:
+							case op.NOT:
+							case op.BNOT:
+							{
+								this.unary(byte);
+								break;
+							}
 							case op.TO_STR:
 								this.push(Value(ValueType.STRING, this.toStr(this.pop())));
 								break;
 							case op.CONCAT:
-								binary((a, b) => Value(ValueType.STRING, a + b), 'concatenation');
+							{
+								const a = this.peek(1).value;
+								const b = this.peek(0).value;
+								this.put(1, Value(ValueType.STRING, a + b));
+								this.pop();
 								break;
+							}
 							case op.NULL:
 								this.push(Value(ValueType.NULL, null));
 								break;
@@ -3481,7 +4078,7 @@ const Engel = (() =>
 									const index   = this.uLEB();
 									if (isLocal)
 									{
-										func.upvalues[i] = this.captureUpvalue(this.stack[this.frame.slot + index]);
+										func.upvalues[i] = this.captureUpvalue(this.frame.slot + index);
 									}
 									else
 									{
@@ -3511,13 +4108,22 @@ const Engel = (() =>
 							}
 							default:
 							{
-								this.error(`Unrecognized op (${byte})`);
+								this.error({
+									'en': `Unrecognized op (${byte})`
+								});
 							}
 						}
 					}
 				},
 			};
-			return (lang) => Interpreter.interpret.call(Interpreter, lang);
+			return (lang) =>
+			{
+				if (chunk === null)
+				{
+					return;
+				}
+				Interpreter.interpret.call(Interpreter, lang);
+			};
 		};
 		return (chunk, lang) => interpreter(chunk, lang)();
 	})();
@@ -3534,30 +4140,13 @@ const Engel = (() =>
 		5 => 6
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
-const prog = (Engel.compile(`
-import io
-dec Cat = (name, lives) -> #{
-	__init__() ->
-	{
-		io.print('Say hi, #{this.name}!', this.sound)
-		return this
-	}
-	name  = name
-	sound = 'meow!'
-	lives = lives
-	foo = #{
-		b = 40
-		a() -> this.b * 4
-	}
-}.__init__()
-dec Harold = Cat('Harold', 9) ; Do not ask why I named this cat 'Harold,' I honestly don't know.
-Harold.foo.b = Harold.lives * 10
-io.print(Harold.lives)
-function(Harold.__init__)?()
-function(Harold.name)?()
-io.print(function(Harold.foo?.a)?())
-`));
-Engel.run(prog, 'en');
+
+const run = () =>
+{
+	const editor = document.querySelector('#editor');
+	const code = editor.innerText;
+	Engel.run(Engel.compile(code, 'en'), 'en');
+}
 const dis = (prog, indent = 0) => {
 	let i = 0;
 	const advance = () => prog.chunk.bytes[i++];
@@ -3583,7 +4172,7 @@ const dis = (prog, indent = 0) => {
 	   return (
 	      (advance() << 24) |
 	      (advance() << 16) |
-	      (advance() << 8) |
+	      (advance() << 8)  |
 	      (advance()));
 	};
 	const {op} = Engel;
@@ -3625,3 +4214,4 @@ const dis = (prog, indent = 0) => {
 		}
 	}
 };
+//dis(prog)

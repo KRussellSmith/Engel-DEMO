@@ -9,7 +9,56 @@
 </head>
 
 <body>
-	<textarea id='editor'></textarea>
+	<pre id='editor'><code contenteditable='true'>import io
+; The following class shows closures and operator overloading:
+dec integer = (num) ->
+{
+	dec x = int(num)
+	return #{
+		- -> -x
+		+ -> +x
+		~ -> ~x
+		- y -> x - y
+		+ y -> x + y
+		* y -> x * y
+		% y -> x % y
+		/ y -> x / y
+		^ y -> x ^ y
+		~ y -> x ~ y
+		& y -> x & y
+		| y -> x | y
+		<< y -> x << y
+		>> y -> x >> y
+	}
+}
+dec twenty = integer(20)
+io.print('20 + 50 = #{twenty + 50}') ; 70</code></pre>
+	<div id='terminal'></div>
+	<svg id='run' viewBox='0 0 100 100'>
+		<circle onclick='run()' stroke='#00FF7F' stroke-width='6%' cx='50%' cy='50%' r='47%'/>
+		<path fill='#00FF7F' onclick='run()' d='
+			M 35 30
+			L 70 50
+			L 35 70
+			Z'/>
+	</svg>
+	<script>
+		
+		//window.setInterval(() => terminal.write('<p>foo</p>'), 200);
+	</script>
 	<script src='main.js'></script>
+	<script src='highlighter.js' type='module'></script>
+	<script type='module'>
+		import { highlight } from './highlighter.js';
+		(() =>
+		{
+			const editor = document.querySelector('#editor code');
+			highlight(editor);
+			editor.addEventListener('input', e =>
+			{
+				highlight(editor);
+			})
+		})();
+	</script>
 </body>
 </html>
