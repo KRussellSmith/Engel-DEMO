@@ -2154,7 +2154,7 @@ const Engel = (() =>
 			};
 			const Compiler = {
 				curr: null,
-				errored: false, // IDC that this isn't a word.
+				errored: false,
 				get chunk()
 				{
 					return this.curr.func.chunk;
@@ -3806,7 +3806,6 @@ const Engel = (() =>
 					for (;;)
 					{
 						byte = this.advance();
-						//console.log(op[byte])
 						if (this.depth >= this.frames.length)
 						{
 							this.error({
@@ -3888,7 +3887,7 @@ const Engel = (() =>
 								this.push(result);
 								break;
 							}
-							case op.METHOD: // For some strange reason, I did not truncate this opcode's name.
+							case op.METHOD:
 							{
 								const func = this.pop().value;
 								
@@ -4361,4 +4360,3 @@ const dis = (prog, indent = 0) => {
 		}
 	}
 };
-//dis(prog)
