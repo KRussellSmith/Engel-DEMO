@@ -26,27 +26,23 @@ export const highlight = (editor) =>
 	const NUM  = '#F88379';
 	const FUNC = '#7DF9FF';
 	const COMM = '#006A4E';
-	const ID   = '#91A3B0'
+	const ID   = '#91A3B0';
 	const Highlighter = {
 		source: editor.innerText,
-		line: 1,
-		column: 1,
 		start: 0,
 		curr: 0,
 		interps: [],
-		newLine()
-		{
-			++this.line;
-			this.column = 1;
-		},
 		fin()
 		{
 			return this.curr >= this.source.length;
 		},
 		advance()
 		{
-			++this.column;
 			return this.source[this.curr++];
+		},
+		back()
+		{
+			--this.curr;
 		},
 		look()
 		{
@@ -106,10 +102,11 @@ export const highlight = (editor) =>
 					// Interpolation:
 					case '#':
 					{
-						if (this.match('{'))
+						if (this.look('{'))
 						{
 							this.interps.push(1);
 							done = true;
+							this.back();
 							break;
 						}
 						break;
