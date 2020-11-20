@@ -1,25 +1,46 @@
 import {Caret} from './caret.js';
-export const highlight = (editor) =>
+export const highlight = (editor, lang = 'en') =>
 {
-	const keywords = [
-		'if',
-		'else',
-		'true',
-		'false',
-		'null',
-		'jump',
-		'break',
-		'while',
-		'for',
-		'match',
-		'return',
-		'this',
-		'call',
-		'let',
-		'dec',
-		'import',
-		'in',
-	];
+	const keywords = {
+		'en': [
+			'if',
+			'else',
+			'true',
+			'false',
+			'null',
+			'jump',
+			'break',
+			'while',
+			'for',
+			'match',
+			'return',
+			'this',
+			'call',
+			'let',
+			'dec',
+			'import',
+			'in',
+		],
+		'es': [
+			'si',
+			'sino',
+			'verdad',
+			'falso',
+			'nulo',
+			'salta',
+			'sale',
+			'mientras',
+			'por',
+			'coincide',
+			'retorna',
+			'esto',
+			'llama',
+			'deja',
+			'dec',
+			'importa',
+			'en',
+		],
+	};
 	const NORM = '#E6E6FA';
 	const KEY = '#FFBF00';
 	const TEXT = '#EDC9AF';
@@ -32,6 +53,7 @@ export const highlight = (editor) =>
 		start: 0,
 		curr: 0,
 		interps: [],
+		skipBrace: false,
 		fin()
 		{
 			return this.curr >= this.source.length;
@@ -105,8 +127,10 @@ export const highlight = (editor) =>
 						if (this.look('{'))
 						{
 							this.interps.push(1);
+							this.skipBrace = true;
 							done = true;
 							this.back();
+							this.skip = 2;
 							break;
 						}
 						break;
@@ -151,7 +175,19 @@ export const highlight = (editor) =>
 			}
 			const char = this.advance();
 			let   color = NORM;
-			switch (char)
+			if (this.interps.length > 0 && this.interps[this.interps.length - 1] <= 0)
+			{
+			   this.interps.pop();
+				if (char !== '\'')
+				{
+					color = this.singleString();
+				}
+				else
+				{
+					color = TEXT;
+				}
+			}
+			else switch (char)
 			{
 				case '\'':
 					color = this.singleString();
@@ -204,22 +240,20 @@ export const highlight = (editor) =>
 					color = NORM;
 					break;
 				case '{':
-					if (this.interps.length >= 0)
+					if (this.skipBrace)
+					{
+						this.skipBrace = false;
+					}
+					else if (this.interps.length > 0)
 					{
 						++this.interps[this.interps.length - 1];
 					}
 					color = NORM;
 					break;
 				case '}':
-					if (this.interps.length >= 0)
+					if (this.interps.length > 0)
 					{
-					   --this.interps[this.interps.length - 1];
-					   if (this.interps[this.interps.length - 1] <= 0)
-					   {
-					   	this.interps.pop();
-					   	color = this.singleString();
-					   	break;
-					   }
+						--this.interps[this.interps.length - 1];
 					}
 					color = NORM;
 					break;
@@ -248,7 +282,7 @@ export const highlight = (editor) =>
 							this.advance();
 						}
 						const ident = this.source.substring(this.start, this.curr);
-						if (keywords.indexOf(ident) >= 0)
+						if (keywords[lang].indexOf(ident) >= 0)
 						{
 							color = KEY;
 							break;

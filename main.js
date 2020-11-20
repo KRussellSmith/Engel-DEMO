@@ -409,7 +409,7 @@ const Engel = (() =>
 					'mientras': TokenType.WHILE,
 					'por':      TokenType.FOR,
 					'coincide': TokenType.MATCH,
-					'returna':  TokenType.RETURN,
+					'retorna':  TokenType.RETURN,
 					'esto':     TokenType.THIS,
 					'lamma':    TokenType.CALL,
 					'deja':     TokenType.LET,
@@ -847,13 +847,13 @@ const Engel = (() =>
 						case '?':
 							return Token(TokenType.QUESTION, this);
 						case '{':
-							if (this.interps.length >= 0)
+							if (this.interps.length > 0)
 							{
 								++this.interps[this.interps.length - 1];
 							}
 							return Token(TokenType.LBRACE, this);
 						case '}':
-							if (this.interps.length >= 0)
+							if (this.interps.length > 0)
 							{
 							   --this.interps[this.interps.length - 1];
 							   if (this.interps[this.interps.length - 1] <= 0)
