@@ -12,7 +12,7 @@ body
 	background-color: #2A2C41 !important;
 	color:            #E5E6FA !important;
 	width:            100vw   !important;
-	height:           80vh    !important;
+	height:           75vh    !important;
 	overflow:         scroll  !important;
 }
 #editor code
@@ -26,21 +26,19 @@ body
 }
 #terminal
 {
-	font-size:        16px   !important;
 	margin:           0      !important;
 	padding:          0      !important;
 	padding-bottom:   16px   !important;
 	background-color: black  !important;
 	color:            white  !important;
 	width:            100vw  !important;
-	height:           20vh   !important;
+	height:           25vh   !important;
 	overflow:         scroll !important;
 }
-#terminal pre
+#terminal code
 {
-	margin-left: 16px !important;
-	margin:      0    !important;
-	padding:     0    !important;
+	font-size:   14px !important;
+	tab-size:    3 !important;
 }
 #run 
 {

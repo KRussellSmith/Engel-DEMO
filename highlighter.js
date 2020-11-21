@@ -41,19 +41,24 @@ export const highlight = (editor, lang = 'en') =>
 			'en',
 		],
 	};
-	const NORM = '#E6E6FA';
-	const KEY = '#FFBF00';
-	const TEXT = '#EDC9AF';
-	const NUM  = '#F88379';
-	const FUNC = '#7DF9FF';
-	const COMM = '#006A4E';
-	const ID   = '#91A3B0';
+	const NORM      = '#E6E6FA';
+	const KEY       = '#FFBF00';
+	const TEXT      = '#EDC9AF';
+	const NUM       = '#F88379';
+	const FUNC      = '#7DF9FF';
+	const COMM      = '#006A4E';
+	const ID        = '#91A3B0';
+	const FAT_ARROW = '#ACE1AF';
+	let skip = 0;
 	const Highlighter = {
 		source: editor.innerText,
 		start: 0,
 		curr: 0,
 		interps: [],
-		skipBrace: false,
+		skip(x)
+		{
+			skip += x;
+		},
 		fin()
 		{
 			return this.curr >= this.source.length;
@@ -127,10 +132,9 @@ export const highlight = (editor, lang = 'en') =>
 						if (this.look('{'))
 						{
 							this.interps.push(1);
-							this.skipBrace = true;
 							done = true;
 							this.back();
-							this.skip = 2;
+							this.skip(2);
 							break;
 						}
 						break;
@@ -174,7 +178,22 @@ export const highlight = (editor, lang = 'en') =>
 				return null;
 			}
 			const char = this.advance();
-			let   color = NORM;
+			let color  = NORM;
+			if (skip > 0)
+			{
+				while (skip-- > 0)
+				{
+					if (this.fin())
+					{
+					   return null;
+					}
+					this.advance();
+				}
+				return {
+					color: NORM,
+					text:  this.source.substring(this.start, this.curr),
+				};
+			}
 			if (this.interps.length > 0 && this.interps[this.interps.length - 1] <= 0)
 			{
 			   this.interps.pop();
@@ -239,12 +258,16 @@ export const highlight = (editor, lang = 'en') =>
 					}
 					color = NORM;
 					break;
-				case '{':
-					if (this.skipBrace)
+				case '=':
+					if (this.match('>'))
 					{
-						this.skipBrace = false;
+						color = FAT_ARROW;
+						break;
 					}
-					else if (this.interps.length > 0)
+					color = NORM;
+					break;
+				case '{':
+					if (this.interps.length > 0)
 					{
 						++this.interps[this.interps.length - 1];
 					}

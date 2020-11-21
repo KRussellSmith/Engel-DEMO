@@ -1,11 +1,11 @@
+'use strict';
 const terminal = {
-	console: document.querySelector('#terminal'),
+	console: document.querySelector('#terminal code'),
 	write(txt)
 	{
-		const el = document.createElement('pre');
-		el.innerText = txt;
-		this.console.appendChild(el);
-		el.scrollIntoView(true);
+		this.console.textContent += txt + '\n';
+		this.console.scrollIntoView(false);
+		//this.console.scrollTop = this.console.scrollHeight;
 	},
 };
 const editor = document.querySelector('#editor');
@@ -155,7 +155,7 @@ const Engel = (() =>
 				{
 					const functionTypes = [
 						ValueType.METHOD,
-						ValueType.FUNCTION,
+						ValueType.FUNC,
 						ValueType.NATIVE,
 						]
 					return (vm, args) =>
@@ -196,11 +196,7 @@ const Engel = (() =>
 				},
 				Value(ValueType.NATIVE, (vm, args) =>
 				{
-					const texts = terminal.console.querySelectorAll('*');
-					for (const text of texts)
-					{
-						terminal.console.removeChild(text);
-					}
+					terminal.console.textContent = '';
 					return NULL;
 				})),
 			],
@@ -1116,15 +1112,16 @@ const Engel = (() =>
 				},
 				funcBody()
 				{
+					this.skipBreaks();
 					const start = this.curr;
 					if (this.taste(TokenType.LBRACE))
 					{
-						nodes = [];
+						const nodes = [];
 						for (;;)
 						{
 							if (this.sniff(TokenType.FIN))
 							{
-								this.error({
+								this.error(this.curr, {
 									'en': 'Unclosed function body.'
 								});
 								return null;
@@ -1563,21 +1560,21 @@ const Engel = (() =>
 					}
 					else if (this.taste(TokenType.MATCH))
 					{
-						const start = this.curr;
 						this.skipBreaks();
+						const start = this.curr;
 						const comp = this.expression();
 						this.skipBreaks();
 						this.eat(TokenType.LBRACE, {
-							'en': 'Expected opening brace ({).',
+							'en': 'Expected opening brace'
 						});
 						const cases = [];
 						for (;;)
 						{
 							this.skipBreaks();
-							if (this.taste(TokenType.FIN))
+							if (this.sniff(TokenType.FIN))
 							{
 								this.error(start, {
-									'en': 'Unclosed match.'
+									'en': 'Expected closing brace.'
 								});
 								break;
 							}
@@ -1588,13 +1585,12 @@ const Engel = (() =>
 							const checks = [];
 							do
 							{
-								this.skipBreaks();
+								this.skipBreaks()
 								const expr = this.expression();
 								checks.push(expr);
-								this.skipBreaks();
 							} while (this.taste(TokenType.COMMA));
 							this.eat(TokenType.FAT_ARROW, {
-								'en': 'Expected fat arrow (=>).',
+								'en': 'Expected fat arrow (=>)'
 							});
 							this.skipBreaks();
 							const then = this.expression();
@@ -1609,6 +1605,7 @@ const Engel = (() =>
 							other = this.expression();
 						}
 						result = Node.Match(comp, cases, other, start.line);
+						return result;
 					}
 					else
 					{
@@ -1819,7 +1816,9 @@ const Engel = (() =>
 				},
 				expression()
 				{
-					return this.assignment();
+					const value = this.assignment();
+					
+					return value;
 				},
 				block()
 				{
@@ -1912,7 +1911,7 @@ const Engel = (() =>
 							{
 								this.skipBreaks()
 								const expr = this.expression();
-								this.checks.push(expr);
+								checks.push(expr);
 							} while (this.taste(TokenType.COMMA));
 							this.eat(TokenType.FAT_ARROW, {
 								'en': 'Expected fat arrow (=>)'
@@ -1920,7 +1919,7 @@ const Engel = (() =>
 							this.skipBreaks();
 							const then = this.statement();
 							const curr = Node.Case(checks, then);
-							this.cases.push(curr);
+							cases.push(curr);
 						}
 						let other = null;
 						this.skipBreaks();
@@ -2222,13 +2221,14 @@ const Engel = (() =>
 				},
 				endCompilerScope()
 				{
-					this.emit(op.NULL, op.RETURN);
+					this.emit(op.NULL)
+					this.emit(op.RETURN);
 					const { func } = this.curr;
 					if (this.curr.daddy !== null)
 					{
 						this.curr.daddy.error = this.curr.error;
 					}
-					func.upvalues = new Array(this.curr.upvalues.length);
+					func.upvalues = this.curr.upvalues.length;
 					this.curr = this.curr.daddy;
 					return func;
 				},
@@ -2255,18 +2255,18 @@ const Engel = (() =>
 					}
 					return -1;
 				},
-				addUpvalue(index, isLocal)
+				addUpvalue(scope, index, isLocal)
 				{
-					const count = this.curr.upvalues.length;
+					const count = scope.upvalues.length;
 					for (let i = 0; i < count; ++i)
 					{
-						const upvalue = this.curr.upvalues[i];
+						const upvalue = scope.upvalues[i];
 						if (upvalue.index === index && upvalue.isLocal === isLocal)
 						{
 							return i;
 						}
 					}
-					this.curr.upvalues.push(Upvalue(index, isLocal));
+					scope.upvalues.push(Upvalue(index, isLocal));
 					return count;
 				},
 				findUpvalue(name, scope)
@@ -2279,12 +2279,14 @@ const Engel = (() =>
 					if (local !== -1)
 					{
 						scope.daddy.locals[local].captured = true;
-						return this.addUpvalue(local, true);
+						return this.addUpvalue(scope, local, true);
 					}
 					const upvalue = this.findUpvalue(name, scope.daddy);
 					if (upvalue !== -1)
 					{
-						return this.addUpvalue(upvalue, false);
+						//alert(name + ' ' +upvalue);
+						const isConst = scope.daddy.upvalues[upvalue].isConst;
+						return this.addUpvalue(scope, upvalue, false);
 					}
 					return -1;
 				},
@@ -2329,7 +2331,6 @@ const Engel = (() =>
 				globals: [],
 				visit(node)
 				{
-					
 					switch (node.type)
 					{
 						case NodeType.GROUP:
@@ -2352,13 +2353,14 @@ const Engel = (() =>
 							for (let i = 0; i < node.interps.length; ++i)
 							{
 								const interp = node.interps[i];
+								//alert(JSON.stringify(interp))
+								this.emitConst(interp.chars, ValueType.STRING);
+								this.visit(interp.value);
+								this.emit(op.TO_STR, op.CONCAT);
 								if (i > 0)
 								{
 									this.emit(op.CONCAT);
 								}
-								this.emitConst(interp.chars, ValueType.STRING);
-								this.visit(interp.value);
-								this.emit(op.TO_STR, op.CONCAT);
 							}
 							this.emitConst(node.terminator, ValueType.STRING);
 							this.emit(op.CONCAT);
@@ -2569,6 +2571,100 @@ const Engel = (() =>
 						}
 						case NodeType.MATCH:
 						{
+							this.visit(node.comp);
+							const exits = [];
+							for (const mcase of node.cases)
+							{
+								const jumps = [];
+								for (const check of mcase.checks)
+								{
+									this.emit(op.DUP);
+									this.visit(check);
+									this.emit(op.EQUIV);
+									this.emit(op.OR);
+									jumps.push(this.saveSpot());
+									this.emit(...this.uInt(0));
+								}
+								this.emit(op.JMP);
+								const noMatch = this.saveSpot();
+								this.emit(...this.uInt(0));
+								for (const jump of jumps)
+								{
+									this.jump(jump);
+								}
+								this.emit(op.POP, op.POP);
+								this.visit(mcase.then);
+								if (node.other !== null || mcase !== node.cases[node.cases.length - 1])
+								{
+									this.emit(op.JMP);
+									exits.push(this.saveSpot());
+									this.emit(...this.uInt(0));
+								}
+								this.jump(noMatch);
+							}
+							if (node.other !== null)
+							{
+								this.visit(node.other);
+							}
+							for (const exit of exits)
+							{
+								this.jump(exit);
+							}
+							/*
+							Match * match = (Match * ) node;
+							visit(match - > comp, compiler, vm);
+							JumpArray jumps;
+							JumpArray exits;
+							init_JumpArray( & jumps);
+							init_JumpArray( & exits);
+							uint32_t i, j;
+							for (i = 0; i < match - > cases.len; ++i)
+							{
+							   Case * mcase = match - > cases.elements[i];
+							   for (j = 0; j < mcase - > checks.len; ++j)
+							   {
+							      Node * check = mcase - > checks.elements[j];
+							      emit_byte(op_dup, compiler, vm);
+							      visit(check, compiler, vm);
+							      emit_byte(op_equiv, compiler, vm);
+							      emit_byte(op_or, compiler, vm);
+							      push_JumpArray( & jumps, save_spot(compiler));
+							      emit_uint32(0, compiler, vm);
+							   }
+							   emit_byte(op_jmp, compiler, vm);
+							   uint32_t no_match = save_spot(compiler);
+							   emit_uint32(0, compiler, vm);
+							   for (j = 0; j < jumps.len; ++j)
+							   {
+							      jump(jumps.elements[j], compiler);
+							   }
+							   free_JumpArray( & jumps);
+							   emit_byte(op_pop, compiler, vm);
+							   emit_byte(op_pop, compiler, vm);
+							   visit(mcase - > then, compiler, vm);
+							   // Check to avoid a needless jump in the last case (in the event of no else clause):
+							   if (match - > other != NULL || i < mcase - > checks.len - 1)
+							   {
+							      emit_byte(op_jmp, compiler, vm);
+							      push_JumpArray( & exits, save_spot(compiler));
+							      emit_uint32(0, compiler, vm);
+							   }
+							   jump(no_match, compiler);
+							}
+							if (match - > other != NULL)
+							{
+							   visit(match - > other, compiler, vm);
+							}
+							for (i = 0; i < exits.len; ++i)
+							{
+							   jump(exits.elements[i], compiler);
+							}
+							//free_JumpArray(&jumps);
+							free_JumpArray( & exits);
+							//free(&jumps);
+							//free(&exits);
+							break;
+							*/
 							break;
 						}
 						case NodeType.ARRAY:
@@ -2747,6 +2843,7 @@ const Engel = (() =>
 						case NodeType.GET:
 						{
 							let depth = this.findLocal(node.name);
+							//alert(node.name)
 							if (depth >= 0)
 							{
 								if (this.curr.locals[depth].depth === -1)
@@ -2760,18 +2857,22 @@ const Engel = (() =>
 									op.GET_LOCAL,
 									...this.uLEB(depth));
 							}
-							else if ((depth = this.findUpvalue(node.name, this.curr)) >= 0)
-							{
-								this.emit(
-									op.GET_UPVAL,
-									...this.uLEB(depth));
-							}
 							else
 							{
-								this.emit(
-									op.GET_GLOBAL,
-									...this.addConst(Value(NodeType.STRING, node.name)));
-								
+								depth = this.findUpvalue(node.name, this.curr);
+								if (depth >= 0)
+								{
+									this.emit(
+										op.GET_UPVAL,
+										...this.uLEB(depth));
+								}
+								else
+								{
+									this.emit(
+										op.GET_GLOBAL,
+										...this.addConst(Value(NodeType.STRING, node.name)));
+									
+								}
 							}
 							break;
 						}
@@ -2793,7 +2894,7 @@ const Engel = (() =>
 									   op.GET_LOCAL,
 									   ...this.uLEB(depth));
 									this.visit(node.right);
-									this.emit(setOp(node.op))
+									this.emit(binOp(node.op))
 								}
 								else
 								{
@@ -2814,7 +2915,7 @@ const Engel = (() =>
 								      op.GET_UPVAL,
 								      ...this.uLEB(depth));
 								   this.visit(node.right);
-								   this.emit(setOp(node.op))
+								   this.emit(binOp(node.op))
 								}
 								else
 								{
@@ -2955,6 +3056,7 @@ const Engel = (() =>
 						}
 						case NodeType.FUNC_CALL:
 						{
+							//alert(JSON.stringify(node))
 							this.visit(node.callee);
 							for (const arg of node.args)
 							{
@@ -2995,6 +3097,7 @@ const Engel = (() =>
 						{
 							break;
 						}
+						console.log(NodeType[node.type])
 						this.visit(node);
 					}
 					return this.errored ? null : this.endCompilerScope();
@@ -3010,12 +3113,17 @@ const Engel = (() =>
 		const interpreter = (chunk, lang) =>
 		{
 			
-			const Frame = (func, slot = 0) => ({
-				func,
+			const Frame = (closure, slot = 0) => ({
+				closure,
 				ip: 0,
 				slot,
 			});
-			const Method = (func, obj = null) =>
+			const Closure = (func, upvalues) =>
+			({
+				func,
+				upvalues,
+			})
+			const Method = (closure, obj = null) =>
 			({
 				obj, func,
 			});
@@ -3077,7 +3185,7 @@ const Engel = (() =>
 				},
 				advance()
 				{
-					return this.frame.func.chunk.bytes[this.frame.ip++];
+					return this.frame.closure.func.chunk.bytes[this.frame.ip++];
 				},
 				peek(level = 0)
 				{
@@ -3120,9 +3228,9 @@ const Engel = (() =>
 				{
 					
 				},
-				call(func, args)
+				call(closure, args)
 				{
-					this.frames[this.depth++] = Frame(func, this.top - args - 1);
+					this.frames[this.depth++] = Frame(closure, this.top - args - 1);
 					return true;
 				},
 				callVal(val, args)
@@ -3131,7 +3239,7 @@ const Engel = (() =>
 					{
 						case ValueType.FUNC:
 						{
-							const func = val.value;
+							const { func } = val.value;
 							const { arity } = func;
 							if (args < arity)
 							{
@@ -3142,7 +3250,7 @@ const Engel = (() =>
 							}
 							if (func.spread)
 							{
-							   return this.call(func, arity);
+							   return this.call(val.value, arity);
 							}
 							else
 							{
@@ -3152,13 +3260,14 @@ const Engel = (() =>
 							         'en': `Too many arguments (${arity} expected).`,
 							      });
 							   }
-							   return this.call(func, args);
+							   return this.call(val.value, args);
 							}
 						}
 						case ValueType.METHOD:
 						{
 							const method = val.value;
-							const { arity } = method.func;
+							const { func }  = method.closure;
+							const { arity } = func;
 							this.push(method.obj);
 							if (args < arity)
 							{
@@ -3169,7 +3278,7 @@ const Engel = (() =>
 							}
 							if (method.func.spread)
 							{
-								this.frames[this.depth++] = Frame(method.func, this.top - arity - 2);
+								this.frames[this.depth++] = Frame(method.closure, this.top - arity - 2);
 							}
 							else
 							{
@@ -3179,7 +3288,7 @@ const Engel = (() =>
 										'en': `Too many arguments (${arity} expected).`,
 									});
 								}
-								this.frames[this.depth++] = Frame(method.func, this.top - args - 2);
+								this.frames[this.depth++] = Frame(method.closure, this.top - args - 2);
 							}
 							return true;
 						}
@@ -3202,13 +3311,13 @@ const Engel = (() =>
 				},
 				getConst()
 				{
-					return this.frame.func.chunk.consts[this.uLEB()];
+					return this.frame.closure.func.chunk.consts[this.uLEB()];
 				},
 				captureUpvalue(local)
 				{
 					let prev = null;
 					let upvalue = this.openUpvalues;
-					
+					//alert(this.stack[local].value);
 					while (upvalue !== null && upvalue.location > local)
 					{
 						prev = upvalue;
@@ -3240,6 +3349,7 @@ const Engel = (() =>
 							const upvalue  = this.openUpvalues;
 							this.openUpvalues = upvalue.next;
 						}
+						//alert(JSON.stringify(this.openUpvalues));
 				},
 				isTrue(x)
 				{
@@ -3397,7 +3507,7 @@ const Engel = (() =>
 							return 'null';
 						case ValueType.BOOL:
 							return value.value ? 'true' : 'false';
-						case ValueType.FUNCTION:
+						case ValueType.FUNC:
 						case ValueType.METHOD:
 						case ValueType.NATIVE:
 							return '<function>';
@@ -3414,7 +3524,7 @@ const Engel = (() =>
 						[ValueType.INT]:      'int',
 						[ValueType.REAL]:     'real',
 						[ValueType.STRING]:   'string',
-						[ValueType.FUNCTION]: 'function',
+						[ValueType.FUNC]:     'function',
 						[ValueType.METHOD]:   'function',
 						[ValueType.NATIVE]:   'function',
 						[ValueType.NULL]:     'null',
@@ -3809,8 +3919,7 @@ const Engel = (() =>
 				interpret()
 				{
 					const NULL = Value(ValueType.NULL, null);
-					this.addFrame(Frame(chunk));
-					
+					this.addFrame(Frame(Closure(chunk, [])));
 					let byte;
 					const _include = this.importNative('.include');
 					for (const key in _include)
@@ -3831,6 +3940,7 @@ const Engel = (() =>
 							terminal.write(this.currError[this.lang])
 							break;
 						}
+						//terminal.write(op[byte]);
 						switch (byte)
 						{
 							case op.IMPORT:
@@ -4076,20 +4186,16 @@ const Engel = (() =>
 							case op.GET_UPVAL:
 							{
 								const index = this.uLEB();
-								this.push(this.frame.func.upvalues[index].value);
+								this.push(this.frame.closure.upvalues[index].value);
+								break;
+							}
+							case op.SET_UPVAL:
+							{
+								const index = this.uLEB();
+								this.frame.closure.upvalues[index].value = this.pop();
 								break;
 							}
 							case op.ADD:
-							{
-								if (
-									this.peek(0).type === ValueType.STRING &&
-									this.peek(0).type === this.peek(1).type)
-								{
-									binary((a, b) => Value(ValueType.STRING, a + b));
-									break;
-								}
-								// Fall-through.
-							}
 							case op.SUB:
 							case op.MUL:
 							case op.MOD:
@@ -4123,8 +4229,6 @@ const Engel = (() =>
 							case op.GT:
 							case op.LE:
 							case op.GE:
-							case op.EQUIV:
-							case op.NOT_EQUIV:
 								this.comp(byte);
 								break;
 							case op.POS:
@@ -4135,15 +4239,26 @@ const Engel = (() =>
 								this.unary(byte);
 								break;
 							}
+							case op.EQUIV:
+							{
+								this.push(Value(ValueType.BOOL, this.equiv(this.pop(), this.pop())));
+								break;
+							}
+							case op.NOT_EQUIV:
+							{
+								this.push(Value(ValueType.BOOL, !this.equiv(this.pop(), this.pop())));
+								break;
+							}
 							case op.TO_STR:
 								this.push(Value(ValueType.STRING, this.toStr(this.pop())));
 								break;
 							case op.CONCAT:
 							{
-								const a = this.peek(1).value;
-								const b = this.peek(0).value;
-								this.put(1, Value(ValueType.STRING, a + b));
-								this.pop();
+								//alert('concat: ' + JSON.stringify(this.stack));
+								const b = this.pop().value;
+								const a = this.pop().value;
+								this.push(Value(ValueType.STRING, a + b));
+								//this.pop();
 								break;
 							}
 							case op.NULL:
@@ -4231,20 +4346,26 @@ const Engel = (() =>
 							{
 								this.push(this.getConst());
 								const func = this.peek().value;
-								
-								for (let i = 0; i < func.upvalues.length; ++i)
+								const upvalues = new Array(func.upvalues);
+								for (let i = 0; i < upvalues.length; ++i)
 								{
 									const isLocal = this.advance() === 1;
 									const index   = this.uLEB();
 									if (isLocal)
 									{
-										func.upvalues[i] = this.captureUpvalue(this.frame.slot + index);
+										//alert('capture')
+										upvalues[i] = this.captureUpvalue(this.frame.slot + index);
+										//alert(JSON.stringify(upvalues))
 									}
 									else
 									{
-										func.upvalues[i] = this.frame.func.upvalues[index];
+										upvalues[i] = this.frame.closure.upvalues[index];
+										//alert(JSON.stringify(this.frame.closure.upvalues))
 									}
 								}
+							//		alert(JSON.stringify(upvalues))
+								const closure = Value(ValueType.FUNC, Closure(func, upvalues));
+								this.put(0, closure);
 								break;
 							}
 							case op.CLOSE:
@@ -4306,8 +4427,10 @@ const run = () =>
 	const editor = document.querySelector('#editor');
 	const code = editor.innerText;
 	Engel.run(Engel.compile(code, 'en'), 'en');
-}
-const dis = (prog, indent = 0) => {
+};
+// Yes, I did get desperate enough to add a dissassembler:
+const dis = (prog, indent = 0) =>
+{
 	let i = 0;
 	const advance = () => prog.chunk.bytes[i++];
 	const uLEB = () =>
@@ -4336,22 +4459,27 @@ const dis = (prog, indent = 0) => {
 	      (advance()));
 	};
 	const {op} = Engel;
+	const {consts} = prog.chunk;
 	for (;;)
 	{
 		if (i >= prog.chunk.bytes.length - 1)
 		{
 			break;
 		}
-		let result = `${i}\t`;
+		let result = ``;
 		for (let i = 0; i < indent; ++i)
 		{
 			result += '\t';
 		}
+		result += `${i}\t`;
 		const byte = advance();
 		result += Engel.op[byte];
 		switch (byte)
 		{
 			case op.GET_LOCAL:
+			case op.GET_UPVAL:
+			case op.SET_LOCAL:
+			case op.SET_UPVAL:
 				result += ' ' + uLEB();
 				break;
 			case op.CONST:
@@ -4363,14 +4491,41 @@ const dis = (prog, indent = 0) => {
 				break;
 			}
 			case op.AND:
+			case op.OR:
+			case op.GOTO:
+			case op.JMP_IF_NULL:
 			case op.JMP:
 				result += ' ' + uInt();
 				break;
+			case op.CALL:
+				result += '(' + uLEB() + ')';
+				break;
+			case op.CLOSURE:
+			{
+				const index = uLEB();
+				const func = consts[index].value;
+				result += `[${index}] := (${func.arity}) {`;
+				terminal.write(result);
+				dis(func, indent + 1);
+				result = '';
+				for (let i = 0; i < indent; ++i)
+				{
+				   result += '\t';
+				}
+				result += '} ['
+				for (let i = 0; i < func.upvalues; ++i)
+				{
+					result += `{ ${ advance() ? 'true' : 'false' }, ${ uLEB() } }`;
+					if (i < func.upvalues.length - 1)
+					{
+						result += ', ';
+					}
+				}
+				result += ']'
+				break;
+			}
 		}
-		console.log(result);
-		if (byte === Engel.op.CLOSURE)
-		{
-			dis(prog.chunk.consts[uLEB()].value, indent + 1);
-		}
+		terminal.write(result);
 	}
+	return prog;
 };

@@ -10,35 +10,55 @@
 
 <body>
 	<pre id='editor'><code contenteditable='true' spellcheck='false' autocomplete='off'>import io
-`The following class shows
- closures and operator overloading:
-.`
-dec integer = (num) ->
+; Using closures to create a vector object in Engel.
+
+dec vector = (x, y) -> (prop) ->
 {
-	dec x = int(num)
-	return #{
-		; Unary:
-		- -> -x
-		+ -> +x
-		~ -> ~x
-		; Binary:
-		- y -> x - y
-		+ y -> x + y
-		* y -> x * y
-		% y -> x % y
-		/ y -> x / y
-		^ y -> x ^ y
-		~ y -> x ~ y
-		& y -> x & y
-		| y -> x | y
-		<< y -> x << y
-		>> y -> x >> y
+	dec mag = () -> (x * x + y * y) ^ 0.5
+	return match prop
+	{
+		'x' => x
+		'y' => y
+		
+		'mag'    => mag()
+		'string' => '[#{x}, #{y}]'
+		'norm'   => () -> vector(x / mag(), y / mag())
+		
+		'normalize' => () ->
+		{
+			dec m = mag()
+			x /= m
+			y /= m
+		}
+		
+		'add' => (vec) -> vector(x + vec('x'), y + vec('y'))
+		'sub' => (vec) -> vector(x - vec('x'), y - vec('y'))
+		'mul' => (vec) -> vector(x * vec('x'), y * vec('y'))
+		'div' => (vec) -> vector(x / vec('x'), y / vec('y'))
+		
+		'dot'   => (vec) -> x * vec('x') + y * vec('y')
+		'cross' => (vec) -> x * vec('x') - vec('y') * y
+		
+		'set' => (prop) -> match prop
+		{
+			'x' => (a) -> x = a
+			'y' => (a) -> y = a
+			'mag' => (a) ->
+			{
+				dec m = mag()
+				x /= m * a
+				y /= m * a
+			}
+		}
+		else null
 	}
+	else null
 }
-dec twenty = integer(20)
-io.clear()
-io.print('20 + 50 = #{twenty + 50}') ; 70</code></pre>
-	<div id='terminal'></div>
+let vec1 = vector(20.2, 30)
+let vec2 = vec1('add')(vector(12, 45))
+io.print('vec1 := #{vec1('string')}')
+io.print('vec2 := #{vec2('string')}')</code></pre>
+	<pre id='terminal'><code></code></pre>
 	<svg id='run' viewBox='0 0 100 100'>
 		<circle onclick='run()' stroke='#00FF7F' stroke-width='6%' cx='50%' cy='50%' r='47%'/>
 		<path fill='#00FF7F' onclick='run()' d='
