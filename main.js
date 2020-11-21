@@ -333,7 +333,7 @@ const Engel = (() =>
 		'I_DIV',     'I_EXP',         'I_MOD',
 		'I_LS',      'I_RS',          'POS',
 		'INC',       'DEC',           'COALESC',
-		'RETURN');
+		'COMP_OBJ',  'RETURN');
 	
 	const compile = (() =>
 	{
@@ -361,7 +361,7 @@ const Engel = (() =>
 			'FUNC',      'HASH_START', 'OBJ_START',
 			'FAT_ARROW', 'IMPORT',     'ERROR',
 			'DOT',       'QUESTION',   'IN',
-			'NULL',      'FIN');
+			'NULL',      'SPREAD',     'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -435,6 +435,10 @@ const Engel = (() =>
 				{
 					++this.col;
 					return this.source[this.curr++];
+				},
+				back()
+				{
+					return this.source[this.curr--];
 				},
 				look()
 				{
@@ -839,6 +843,17 @@ const Engel = (() =>
 						case ':':
 							return Token(TokenType.COLON, this);
 						case '.':
+							if (this.match('.'))
+							{
+								if (this.match('.'))
+								{
+									return Token(TokenType.SPREAD, this);
+								}
+								else
+								{
+									this.back();
+								}
+							}
 							return Token(TokenType.DOT, this);
 						case '?':
 							return Token(TokenType.QUESTION, this);
@@ -1039,9 +1054,9 @@ const Engel = (() =>
 				Operator: (op, arg, body) => ({
 					op, arg, body,
 				}),
-				Obj: (fields = [], methods = [], operators = [], line = 0) => ({
+				Obj: (fields = [], methods = [], operators = [], comps = [], line = 0) => ({
 					...base(NodeType.OBJ, line),
-					fields, methods, operators,
+					fields, methods, operators, comps,
 				}),
 				GetProp: (left, right, line = 0) => ({
 					...base(NodeType.GET_PROP, line),
@@ -1399,10 +1414,11 @@ const Engel = (() =>
 							unary:  [],
 							binary: [],
 						};
+						const comps = [];
 						this.skipBreaks();
-						if (this.taste(TokenType.RBRACK))
+						if (this.taste(TokenType.RBRACE))
 						{
-							result = Node.Hash(elements, this.prev.line);
+							result = Node.Obj(fields, methods, [], comps, this.prev.line);
 						}
 						else
 						{
@@ -1436,6 +1452,15 @@ const Engel = (() =>
 								TokenType.EQUIV,
 								TokenType.NOT_EQUIV,
 								TokenType.NOT];
+							if (this.taste(TokenType.SPREAD))
+							{
+								do
+								{
+									this.skipBreaks();
+									comps.push(this.expression());
+									this.skipBreaks();
+								} while (this.taste(TokenType.COMMA));
+							}
 							for (;;)
 							{
 								this.skipBreaks();
@@ -1555,7 +1580,7 @@ const Engel = (() =>
 									}
 								}
 							}
-							result = Node.Obj(fields, methods, [...operators.binary, ...operators.unary], this.prev.line);
+							result = Node.Obj(fields, methods, [...operators.binary, ...operators.unary], comps, this.prev.line);
 						}
 					}
 					else if (this.taste(TokenType.MATCH))
@@ -2610,61 +2635,6 @@ const Engel = (() =>
 							{
 								this.jump(exit);
 							}
-							/*
-							Match * match = (Match * ) node;
-							visit(match - > comp, compiler, vm);
-							JumpArray jumps;
-							JumpArray exits;
-							init_JumpArray( & jumps);
-							init_JumpArray( & exits);
-							uint32_t i, j;
-							for (i = 0; i < match - > cases.len; ++i)
-							{
-							   Case * mcase = match - > cases.elements[i];
-							   for (j = 0; j < mcase - > checks.len; ++j)
-							   {
-							      Node * check = mcase - > checks.elements[j];
-							      emit_byte(op_dup, compiler, vm);
-							      visit(check, compiler, vm);
-							      emit_byte(op_equiv, compiler, vm);
-							      emit_byte(op_or, compiler, vm);
-							      push_JumpArray( & jumps, save_spot(compiler));
-							      emit_uint32(0, compiler, vm);
-							   }
-							   emit_byte(op_jmp, compiler, vm);
-							   uint32_t no_match = save_spot(compiler);
-							   emit_uint32(0, compiler, vm);
-							   for (j = 0; j < jumps.len; ++j)
-							   {
-							      jump(jumps.elements[j], compiler);
-							   }
-							   free_JumpArray( & jumps);
-							   emit_byte(op_pop, compiler, vm);
-							   emit_byte(op_pop, compiler, vm);
-							   visit(mcase - > then, compiler, vm);
-							   // Check to avoid a needless jump in the last case (in the event of no else clause):
-							   if (match - > other != NULL || i < mcase - > checks.len - 1)
-							   {
-							      emit_byte(op_jmp, compiler, vm);
-							      push_JumpArray( & exits, save_spot(compiler));
-							      emit_uint32(0, compiler, vm);
-							   }
-							   jump(no_match, compiler);
-							}
-							if (match - > other != NULL)
-							{
-							   visit(match - > other, compiler, vm);
-							}
-							for (i = 0; i < exits.len; ++i)
-							{
-							   jump(exits.elements[i], compiler);
-							}
-							//free_JumpArray(&jumps);
-							free_JumpArray( & exits);
-							//free(&jumps);
-							//free(&exits);
-							break;
-							*/
 							break;
 						}
 						case NodeType.ARRAY:
@@ -2766,8 +2736,13 @@ const Engel = (() =>
 								}
 								this.emit(op.METHOD);
 							}
+							for (const comp of node.comps)
+							{
+								this.visit(comp);
+							}
 							this.emit(
 								op.OBJ,
+								...this.uLEB(node.comps.length),
 								...this.uLEB(
 									node.methods.length +
 									node.operators.length +
@@ -2843,7 +2818,6 @@ const Engel = (() =>
 						case NodeType.GET:
 						{
 							let depth = this.findLocal(node.name);
-							//alert(node.name)
 							if (depth >= 0)
 							{
 								if (this.curr.locals[depth].depth === -1)
@@ -3056,7 +3030,6 @@ const Engel = (() =>
 						}
 						case NodeType.FUNC_CALL:
 						{
-							//alert(JSON.stringify(node))
 							this.visit(node.callee);
 							for (const arg of node.args)
 							{
@@ -3125,7 +3098,7 @@ const Engel = (() =>
 			})
 			const Method = (closure, obj = null) =>
 			({
-				obj, func,
+				obj, closure,
 			});
 			const Obj = (fields = {}, methods = {}) =>
 			({
@@ -3276,7 +3249,7 @@ const Engel = (() =>
 								});
 								return false;
 							}
-							if (method.func.spread)
+							if (func.spread)
 							{
 								this.frames[this.depth++] = Frame(method.closure, this.top - arity - 2);
 							}
@@ -4020,9 +3993,30 @@ const Engel = (() =>
 							}
 							case op.OBJ:
 							{
+								const comps = this.uLEB();
 								const len = this.uLEB();
 								const fields    = {};
 								const methods   = {};
+								for (let i = comps - 1; i >= 0; --i)
+								{
+									const val = this.stack[this.top - 1 - i];
+									if (val.type !== ValueType.OBJ)
+									{
+										this.error({
+											'en': `Cannot composite value of type ${this.typeName(val)} into object.`,
+										});
+									}
+									const obj = val.value;
+									for (const key in obj.fields)
+									{
+										fields[key] = obj.fields[key];
+									}
+									for (const key in obj.methods)
+									{
+										methods[key] = Value(ValueType.METHOD, Method(obj.methods[key].value.closure));
+									}
+								}
+								this.top -= comps;
 								for (let i = 0; i < len; ++i)
 								{
 									const key = this.stack[this.top - 1 - i * 2 - 1].value;
@@ -4036,7 +4030,6 @@ const Engel = (() =>
 											fields[key] = value;
 											break;
 									}
-									
 								}
 								const result = Value(ValueType.OBJ, Obj(fields, methods));
 								for (const key in methods)

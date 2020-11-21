@@ -49,6 +49,7 @@ export const highlight = (editor, lang = 'en') =>
 	const COMM      = '#8F9779';
 	const ID        = '#91A3B0';
 	const FAT_ARROW = '#ACE1AF';
+	const SPREAD    = FAT_ARROW;
 	let skip = 0;
 	const Highlighter = {
 		source: editor.innerText,
@@ -263,6 +264,22 @@ export const highlight = (editor, lang = 'en') =>
 					{
 						color = FAT_ARROW;
 						break;
+					}
+					color = NORM;
+					break;
+				
+				case '.':
+					if (this.match('.'))
+					{
+						if (this.match('.'))
+						{
+							color = SPREAD;
+							break;
+						}
+						else
+						{
+							this.back();
+						}
 					}
 					color = NORM;
 					break;
