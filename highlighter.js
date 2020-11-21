@@ -46,7 +46,7 @@ export const highlight = (editor, lang = 'en') =>
 	const TEXT      = '#EDC9AF';
 	const NUM       = '#F88379';
 	const FUNC      = '#7DF9FF';
-	const COMM      = '#006A4E';
+	const COMM      = '#8F9779';
 	const ID        = '#91A3B0';
 	const FAT_ARROW = '#ACE1AF';
 	let skip = 0;
