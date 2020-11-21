@@ -1551,8 +1551,8 @@ const Engel = (() =>
 									}
 									else
 									{
-										this.error({
-											'en': 'Invalid object statement.'
+										this.error(this.curr, {
+											'en': 'Invalid object statement.',
 										});
 										break;
 									}
@@ -1714,7 +1714,7 @@ const Engel = (() =>
 					}
 					return result;
 				},
-				comparision()
+				comparison()
 				{
 					let expr = this.bor();
 					const compare = [
@@ -1740,11 +1740,11 @@ const Engel = (() =>
 				},
 				and()
 				{
-					let result = this.comparision();
+					let result = this.comparison();
 					while (this.taste(TokenType.AND))
 					{
 						this.skipBreaks();
-						result = Node.Binary(NodeType.AND, result, this.comparision());
+						result = Node.Binary(NodeType.AND, result, this.comparison());
 					}
 					return result;
 				},
@@ -2388,7 +2388,7 @@ const Engel = (() =>
 							this.visit(node.primer)
 							if (node.list.length === 1)
 							{
-								this.visitUnary(node.list[0], getOp(node.list[0].type));
+								this.visitUnary(node.list[0], binOp(node.list[0].type));
 							}
 							else
 							{
@@ -2487,7 +2487,7 @@ const Engel = (() =>
 								}
 								for (const brk of loop.breaks)
 								{
-									this.goTo(brk, end);
+									this.goTo(brk, this.saveSpot());
 								}
 								this.jump(mainBreak);
 								this.emit(op.POP);
@@ -2501,7 +2501,7 @@ const Engel = (() =>
 								}
 								for (const brk of loop.breaks)
 								{
-									this.goTo(brk, end);
+									this.goTo(brk, this.saveSpot());
 								}
 								this.jump(mainBreak);
 								this.emit(op.POP);
@@ -2511,6 +2511,13 @@ const Engel = (() =>
 						}
 						case NodeType.CONTINUE:
 						{
+							if (this.curr.loop === null)
+							{
+								this.error({
+									'en': `Illegal jump`,
+								})
+								break;
+							}
 							this.emit(op.GOTO);
 							this.curr.loop.continues.push(this.saveSpot());
 							this.emit(...this.uInt());
@@ -2518,6 +2525,13 @@ const Engel = (() =>
 						}
 						case NodeType.BREAK:
 						{
+							if (this.curr.loop === null)
+							{
+							   this.error({
+							      'en': `Illegal break`,
+							   })
+							   break;
+							}
 							this.emit(op.GOTO);
 							this.curr.loop.breaks.push(this.saveSpot());
 							this.emit(...this.uInt());
@@ -2821,7 +2835,7 @@ const Engel = (() =>
 										op.GET_GLOBAL,
 										...this.addConst(Value(NodeType.STRING, name)));
 									this.visit(node.right);
-									this.emit(tokenOp(node.op))
+									this.emit(binOp(node.op))
 								}
 								else
 								{
@@ -2851,7 +2865,7 @@ const Engel = (() =>
 								this.emit(op.SUBSCRIPT);
 								// Get the right-hand, perform operation:
 								this.visit(node.value);
-								this.emit(tokenOp(node.op));
+								this.emit(binOp(node.op));
 								
 								this.visit(node.map);
 								this.emit(op.SET_SUBSCRIPT);
@@ -2878,7 +2892,7 @@ const Engel = (() =>
 								this.emit(op.GET_PROP);
 								// Get the right-hand, perform operation:
 								this.visit(node.value);
-								this.emit(tokenOp(node.op));
+								this.emit(binOp(node.op));
 								
 								this.visit(node.obj);
 								this.emit(op.SET_PROP);
@@ -3459,7 +3473,7 @@ const Engel = (() =>
 						case op.GT:
 						case op.LE:
 						case op.GE:
-							return 'comparision';
+							return 'comparison';
 						case op.POS:
 							return 'positive';
 						case op.NEG:
@@ -3672,7 +3686,7 @@ const Engel = (() =>
 							a.type === b.type) ?
 							ValueType.INT : ValueType.REAL;
 						let result = Value(valType, 0);
-						switch (type)
+						switch (code)
 						{
 							case op.I_ADD:
 								result.value = a.value + b.value;
