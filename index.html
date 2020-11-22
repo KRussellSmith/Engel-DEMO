@@ -10,27 +10,20 @@
 
 <body>
 	<pre id='editor'><code contenteditable='true' spellcheck='false' autocomplete='off'>import io
-; Example showing object composition.
-	
 io.clear()
-dec Foo = #{
-	a = 30
-	getVal() -> this.a
+io.print('Input some stuff!')
+while true
+{
+	dec input = io.line()
+	io.print(input)
+	if input == 'quit'
+	{
+		break
+	}
 }
-dec Baz = #{
-	b = 34
-	getVal() -> this.b
-}
-dec Bar = #{
-	... #{
-		... Foo
-		c = 20
-	}, Baz
-}
-Bar.b *= 2
-io.print(Bar.getVal())
-io.print(Baz.b)</code></pre>
+io.print('end!')</code></pre>
 	<pre id='terminal'><code></code></pre>
+	<input id='in'></input>
 	<svg id='run' viewBox='0 0 100 100'>
 		<circle onclick='run()' stroke='#00FF7F' stroke-width='6%' cx='50%' cy='50%' r='47%'/>
 		<path fill='#00FF7F' onclick='run()' d='
@@ -39,11 +32,14 @@ io.print(Baz.b)</code></pre>
 			L 35 70
 			Z'/>
 	</svg>
+	<script src='soon.js'></script>
 	<script src='main.js'></script>
 	
 	<script type='module'>
 		import { highlight } from './highlighter.js';
 		import { Caret } from './caret.js';
+		//import { Engel } from './main.js';
+		
 		(() =>
 		{
 			const editor = document.querySelector('#editor code');
@@ -67,6 +63,7 @@ io.print(Baz.b)</code></pre>
 				const TAB   = 9;
 				const ENTER = 13;
 				const SPACE = 32;
+				const BACK  = 8;
 				switch (e.keyCode)
 				{
 					case TAB:
@@ -77,8 +74,8 @@ io.print(Baz.b)</code></pre>
 					}
 					case ENTER:
 					{
-						const lines = editor.innerText.split('\n');
-						const line = editor.innerText.substring(0, caret.getPos()).split('\n').length;
+						const lines = editor.textContent.split('\n');
+						const line = editor.textContent.substring(0, caret.getPos()).split('\n').length;
 						const spaces = /^[ \t]+/.exec(lines[line - 1]) || '';
 						document.execCommand('insertText', false, `\n${spaces}`);
 						e.preventDefault();

@@ -32,13 +32,30 @@ body
 	background-color: black  !important;
 	color:            white  !important;
 	width:            100vw  !important;
-	height:           25vh   !important;
+	height:           19vh   !important;
 	overflow:         scroll !important;
 }
 #terminal code
 {
 	font-size:   14px !important;
 	tab-size:    3 !important;
+}
+#in
+{
+	width:      100vw !important;
+	height:     5vh   !important;
+	background: black !important;
+	color:      white !important;
+	margin:     0 !important;
+	padding:    0 !important;
+	border:     none            !important;
+	border-top: 1px solid white !important;
+	tab-size:   3               !important;
+	font-size:  14px            !important;
+}
+input:focus
+{
+	outline: none !important;
 }
 #run 
 {

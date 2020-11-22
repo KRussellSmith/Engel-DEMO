@@ -95,15 +95,15 @@ export const highlight = (editor, lang = 'en') =>
 		},
 		isAlpha(x)
 		{
-			return x === '_' || RegExp(/^\p{L}/, 'u').test(x);
+			return !this.fin() && (x === '_' || RegExp(/^\p{L}/, 'u').test(x));
 		},
 		isDigit(x)
 		{
-			return /[0-9]/.test(x);
+			return !this.fin() && /[0-9]/.test(x);
 		},
 		isAlphaNum(x)
 		{
-			return this.isAlpha(x) || this.isDigit(x);
+			return !this.fin() && (this.isAlpha(x) || this.isDigit(x));
 		},
 		singleString()
 		{
@@ -146,7 +146,6 @@ export const highlight = (editor, lang = 'en') =>
 		},
 		doubleString()
 		{
-			
 			let string = '';
 			let done = false;
 			do
@@ -340,6 +339,10 @@ export const highlight = (editor, lang = 'en') =>
 			};
 		},
 	};
+	if (!editor.textContent || editor.textContent.length <= 0)
+	{
+		return;
+	}
 	let result = '';
 	const caret = new Caret(editor);
 	const save = caret.getPos();

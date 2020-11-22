@@ -1,4 +1,5 @@
 'use strict';
+//import { soon } from './soon.js'
 const terminal = {
 	console: document.querySelector('#terminal code'),
 	write(txt)
@@ -110,6 +111,45 @@ const Engel = (() =>
 				const val = vm.stack[vm.top - args];
 				return Value(ValueType.BOOLEAN, vm.isTrue(val));
 			}),
+			'function': Value(ValueType.NATIVE, (() =>
+			{
+				const functionTypes = [
+					ValueType.METHOD,
+					ValueType.FUNC,
+					ValueType.NATIVE,
+				];
+				return (vm, args) =>
+				{
+					if (args === 0)
+					{
+						return NULL;
+					}
+					const val = vm.stack[vm.top - args];
+					if (functionTypes.indexOf(val.type) >= 0)
+					{
+						return val;
+					}
+					return NULL;
+				};
+			})()),
+			'array': Value(ValueType.NATIVE, (vm, args) =>
+			{
+				if (args === 0)
+				{
+					return NULL;
+				}
+				const val = vm.stack[vm.top - args];
+				switch (val.type)
+				{
+					case ValueType.ARRAY:
+						return val;
+					case ValueType.STRING:
+						return Value(ValueType.ARRAY, val.value.split(''));
+					case ValueType.HASHMAP:
+						return Value(ValueType.ARRAY, val.value.entries().flat());
+				}
+				return NULL;
+			})
 		};
 		const libs = {
 			'.include': [
@@ -151,27 +191,7 @@ const Engel = (() =>
 					'fr': 'fonction',
 					'de': 'funktion',
 				},
-				Value(ValueType.NATIVE, (() =>
-				{
-					const functionTypes = [
-						ValueType.METHOD,
-						ValueType.FUNC,
-						ValueType.NATIVE,
-						]
-					return (vm, args) =>
-					{
-						if (args === 0)
-						{
-							return NULL;
-						}
-						const val = vm.stack[vm.top - args];
-						if (functionTypes.indexOf(val.type) >= 0)
-						{
-							return val;
-						}
-						return NULL;
-					};
-				})())),
+				casters['function']),
 			],
 			'io': [
 				Native({
@@ -186,6 +206,7 @@ const Engel = (() =>
 					{
 						terminal.write(vm.toStr(vm.stack[i]));
 					}
+					vm.delay = 4;
 					return NULL;
 				})),
 				Native({
@@ -199,6 +220,24 @@ const Engel = (() =>
 					terminal.console.textContent = '';
 					return NULL;
 				})),
+				Native({
+					'en': 'line',
+					'es': 'linea'
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					const event = {
+						type: 'change',
+						target: document.querySelector('#in'),
+						func(e)
+						{
+							vm.put(0, Value(ValueType.STRING, this.target.value));
+							return true;
+						},
+					};
+					vm.event = event;
+					return NULL;
+				})),
 			],
 			'krono': [
 				Native({
@@ -209,7 +248,6 @@ const Engel = (() =>
 					},
 					(() =>
 					{
-						//const clock = new Date();
 						return Native(ValueType.NATIVE, (vm, args) =>
 						{
 							return Value(ValueType.INT, Date.now());
@@ -513,15 +551,15 @@ const Engel = (() =>
 				},
 				isAlpha(x)
 				{
-					return x === '_' || RegExp(/^\p{L}/, 'u').test(x);
+					return !this.fin() && (x === '_' || RegExp(/^\p{L}/, 'u').test(x));
 				},
 				isDigit(x)
 				{
-					return /[0-9]/.test(x);
+					return !this.fin() && /[0-9]/.test(x);
 				},
 				isAlphaNum(x)
 				{
-					return this.isAlpha(x) || this.isDigit(x);
+					return !this.fin() && (this.isAlpha(x) || this.isDigit(x));
 				},
 				error(message)
 				{
@@ -1363,6 +1401,10 @@ const Engel = (() =>
 							do
 							{
 								this.skipBreaks();
+								if (this.sniff(TokenType.RBRACK))
+								{
+									break;
+								}
 								elements.push(this.expression());
 								this.skipBreaks();
 							} while (this.taste(TokenType.COMMA));
@@ -2309,7 +2351,6 @@ const Engel = (() =>
 					const upvalue = this.findUpvalue(name, scope.daddy);
 					if (upvalue !== -1)
 					{
-						//alert(name + ' ' +upvalue);
 						const isConst = scope.daddy.upvalues[upvalue].isConst;
 						return this.addUpvalue(scope, upvalue, false);
 					}
@@ -2378,7 +2419,6 @@ const Engel = (() =>
 							for (let i = 0; i < node.interps.length; ++i)
 							{
 								const interp = node.interps[i];
-								//alert(JSON.stringify(interp))
 								this.emitConst(interp.chars, ValueType.STRING);
 								this.visit(interp.value);
 								this.emit(op.TO_STR, op.CONCAT);
@@ -3070,7 +3110,6 @@ const Engel = (() =>
 						{
 							break;
 						}
-						console.log(NodeType[node.type])
 						this.visit(node);
 					}
 					return this.errored ? null : this.endCompilerScope();
@@ -3129,7 +3168,8 @@ const Engel = (() =>
 				openUpvalues: null,
 				currError:    null,
 				lang,
-				
+				delay:        0,
+				event:        null,
 				Upvalue(location)
 				{
 					return {
@@ -3290,7 +3330,6 @@ const Engel = (() =>
 				{
 					let prev = null;
 					let upvalue = this.openUpvalues;
-					//alert(this.stack[local].value);
 					while (upvalue !== null && upvalue.location > local)
 					{
 						prev = upvalue;
@@ -3322,7 +3361,6 @@ const Engel = (() =>
 							const upvalue  = this.openUpvalues;
 							this.openUpvalues = upvalue.next;
 						}
-						//alert(JSON.stringify(this.openUpvalues));
 				},
 				isTrue(x)
 				{
@@ -3355,6 +3393,7 @@ const Engel = (() =>
 				{
 					const value = this.peek(1);
 					const key   = this.peek(0);
+					let result  = NULL;
 					switch (value.type)
 					{
 						case ValueType.ARRAY:
@@ -3362,14 +3401,14 @@ const Engel = (() =>
 							if (key.type === ValueType.INT)
 							{
 								const index = key.value;
-								if (index < 0 || index >= key.length)
+								if (index < 0 || index >= value.value.length)
 								{
 									this.error({
 										'en': `Value ${index} outside of subscriptable range.`
 										});
 									break;
 								}
-								result = value.value[key.value];
+								result = value.value[index];
 								break;
 							}
 							this.error({
@@ -3399,10 +3438,10 @@ const Engel = (() =>
 						}
 						case ValueType.HASHMAP:
 						{
-							if (!(key.value in value))
+							if (!(key.value in value.value))
 							{
 								this.error({
-									'en': `No key '${this.str(key)} in map.`,
+									'en': `No key '${this.toStr(key)}' in map.`,
 									});
 								break;
 							}
@@ -3434,14 +3473,14 @@ const Engel = (() =>
 							if (key.type === ValueType.INT)
 							{
 								const index = key.value;
-								if (index < 0 || index >= key.length)
+								if (index < 0 || index >= value.value.length)
 								{
 									this.error({
 										'en': `Value ${index} outside of subscriptable range.`,
 										});
 									break;
 								}
-								result = value.value[key.value] = setVal;
+								result = value.value[index] = setVal;
 								break;
 							}
 							this.error({
@@ -3487,7 +3526,9 @@ const Engel = (() =>
 						case ValueType.OBJ:
 							return '<object>';
 						case ValueType.ARRAY:
-							
+							return '<array>'
+						case ValueType.HASHMAP:
+							return '<hashmap>'
 					}
 					return '';
 				},
@@ -3502,7 +3543,9 @@ const Engel = (() =>
 						[ValueType.NATIVE]:   'function',
 						[ValueType.NULL]:     'null',
 						[ValueType.BOOL]:     'Boolean',
-						[ValueType.OBJ]:      'obj',
+						[ValueType.OBJ]:      'object',
+						[ValueType.ARRAY]:    'array',
+						[ValueType.HASHMAP]:  'hashmap',
 					}[val.type];
 				},
 				importNative(lib = '')
@@ -3729,7 +3772,7 @@ const Engel = (() =>
 								result.value = a.value < b.value;
 								break;
 							case op.GT:
-								result.value = a.value < b.value;
+								result.value = a.value > b.value;
 								break;
 							case op.LE:
 								result.value = a.value <= b.value;
@@ -3899,7 +3942,7 @@ const Engel = (() =>
 					{
 						this.globals[key] = Global(_include[key], true);
 					}
-					for (;;)
+					const main = () =>
 					{
 						byte = this.advance();
 						if (this.depth >= this.frames.length)
@@ -3911,7 +3954,7 @@ const Engel = (() =>
 						if (this.currError !== null)
 						{
 							terminal.write(this.currError[this.lang])
-							break;
+							return false;
 						}
 						//terminal.write(op[byte]);
 						switch (byte)
@@ -3919,6 +3962,12 @@ const Engel = (() =>
 							case op.IMPORT:
 							{
 								const name = this.pop().value;
+								if (name in this.globals)
+								{
+									this.error({
+										'en': `${name} is already defined.`,
+									})
+								}
 								const lib = this.importNative(name);
 								this.globals[name] = Global(
 									Value(ValueType.OBJ, Obj(lib, {})),
@@ -4247,11 +4296,9 @@ const Engel = (() =>
 								break;
 							case op.CONCAT:
 							{
-								//alert('concat: ' + JSON.stringify(this.stack));
 								const b = this.pop().value;
 								const a = this.pop().value;
 								this.push(Value(ValueType.STRING, a + b));
-								//this.pop();
 								break;
 							}
 							case op.NULL:
@@ -4346,17 +4393,13 @@ const Engel = (() =>
 									const index   = this.uLEB();
 									if (isLocal)
 									{
-										//alert('capture')
 										upvalues[i] = this.captureUpvalue(this.frame.slot + index);
-										//alert(JSON.stringify(upvalues))
 									}
 									else
 									{
 										upvalues[i] = this.frame.closure.upvalues[index];
-										//alert(JSON.stringify(this.frame.closure.upvalues))
 									}
 								}
-							//		alert(JSON.stringify(upvalues))
 								const closure = Value(ValueType.FUNC, Closure(func, upvalues));
 								this.put(0, closure);
 								break;
@@ -4374,7 +4417,7 @@ const Engel = (() =>
 								--this.depth;
 								if (this.depth <= 0)
 								{
-									return;
+									return false;
 								}
 								this.top = this.frames[this.depth].slot;
 								this.push(val);
@@ -4387,7 +4430,52 @@ const Engel = (() =>
 								});
 							}
 						}
-					}
+						if (this.delay > 0)
+						{
+						   setTimeout(main, this.delay);
+						   this.delay = 0;
+						}
+						else if (this.event !== null)
+						{
+							const resume = e =>
+							{
+								if (this.event.func(e))
+								{
+									this.event.target.removeEventListener(this.event.type, resume);
+									this.event = null;
+									main();
+								}
+							};
+							this.event.target.addEventListener(this.event.type, resume);
+						}
+						else
+						{
+							soon(main);
+						}
+					};
+					
+					soon(main);
+					/*(() =>
+					{
+						const div = document.createElement('div');
+						let curr = false;
+						(new MutationObserver(() =>
+						{
+							if (main())
+							{
+								curr = !curr;
+								div.setAttribute('class', curr);
+							}
+				
+						})).observe(
+							div,
+							{
+								attributes:    true,
+								childList:     true,
+								characterData: true,
+							});
+						div.setAttribute('class', curr);
+					})();*/
 				},
 			};
 			return (lang) =>
@@ -4417,8 +4505,8 @@ const Engel = (() =>
 
 const run = () =>
 {
-	const editor = document.querySelector('#editor');
-	const code = editor.innerText;
+	const editor = document.querySelector('#editor code');
+	const code = editor.textContent;
 	Engel.run(Engel.compile(code, 'en'), 'en');
 };
 // Yes, I did get desperate enough to add a dissassembler:
