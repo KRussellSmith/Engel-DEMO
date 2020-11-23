@@ -10,15 +10,42 @@
 
 <body>
 	<pre id='editor'><code contenteditable='true' spellcheck='false' autocomplete='off'>import io
+import math
 io.clear()
-io.print('Input some stuff!')
+io.print('Guess a number between 1 and 10!')
+dec number = int(1 + math.random() * 10)
 while true
 {
 	dec input = io.line()
 	io.print(input)
-	if input == 'quit'
+	let guess = int(input)
+	if guess != null
 	{
-		break
+		if guess == number
+		{
+			io.print('You got it!')
+			break
+		}
+		else if guess < number
+		{
+			io.print('Too low!')
+		}
+		else
+		{
+			io.print('Too high!')
+		}
+	}
+	else match input
+	{
+		'quit' =>
+		{
+			io.print('Too bad!')
+			break
+		}
+	}
+	else
+	{
+		io.print('Please input a number! (or \'quit\')')
 	}
 }
 io.print('end!')</code></pre>

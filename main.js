@@ -144,12 +144,12 @@ const Engel = (() =>
 					case ValueType.ARRAY:
 						return val;
 					case ValueType.STRING:
-						return Value(ValueType.ARRAY, val.value.split(''));
+						return Value(ValueType.ARRAY, val.value.split('').map(x => Value(ValueType.STRING, x)));
 					case ValueType.HASHMAP:
-						return Value(ValueType.ARRAY, val.value.entries().flat());
+						return Value(ValueType.ARRAY, Object.entries(val.value).flat());
 				}
 				return NULL;
-			})
+			}),
 		};
 		const libs = {
 			'.include': [
@@ -192,6 +192,14 @@ const Engel = (() =>
 					'de': 'funktion',
 				},
 				casters['function']),
+				Native(
+					{
+						'en': 'array',
+						'es': 'vector',
+						'fr': 'vector',
+						'fr': 'vektor',
+					},
+					casters['array']),
 			],
 			'io': [
 				Native({
@@ -222,7 +230,9 @@ const Engel = (() =>
 				})),
 				Native({
 					'en': 'line',
-					'es': 'linea'
+					'es': 'linea',
+					'fr': 'ligne',
+					'de': 'zeile',
 				},
 				Value(ValueType.NATIVE, (vm, args) =>
 				{
@@ -238,6 +248,44 @@ const Engel = (() =>
 					vm.event = event;
 					return NULL;
 				})),
+			],
+			'util': [
+				Native(
+					{
+						'en': 'len',
+						'es': 'lon',
+						'fr': 'lon',
+						'de': 'grö',
+					},
+					Value(ValueType.NATIVE, (vm, args) =>
+					{
+						if (args === 0)
+						{
+							return NULL;
+						}
+						const result = Value(ValueType.INT, 0);
+						const arg = vm.stack[vm.top - args];
+						switch (arg.type)
+						{
+							case ValueType.ARRAY:
+							case ValueType.STRING:
+								result.value = arg.value.length;
+								break;
+							case ValueType.HASHMAP:
+							{
+								const entries = arg.value.entries()
+								for (const [key, value] of entries)
+								{
+									let type = ValueType.NULL;
+									
+								}
+								break;
+							}
+							default:
+								return NULL;
+						}
+						return result;
+					})),
 			],
 			'krono': [
 				Native({
@@ -305,6 +353,16 @@ const Engel = (() =>
 						return NULL;
 					}
 					return Value(ValueType.REAL, Math.log(x));
+				})),
+				Native({
+					'en': 'random',
+					'es': 'random',
+					'fr': 'random',
+					'de': 'random',
+				},
+				Value(ValueType.NATIVE, (vm, args) =>
+				{
+					return Value(ValueType.REAL, Math.random());
 				})),
 			],
 			'game':   [
@@ -1945,7 +2003,7 @@ const Engel = (() =>
 						if (this.taste(TokenType.ELSE))
 						{
 							this.skipBreaks();
-							other = this.block();
+							other = this.statement();
 						}
 						return Node.IfElse(condition, body, other, this.prev.line);
 					}
@@ -1993,7 +2051,7 @@ const Engel = (() =>
 						if (this.taste(TokenType.ELSE))
 						{
 							this.skipBreaks();
-							other = this.block();
+							other = this.statement();
 						}
 						return Node.Match(comp, cases, other, start.line);
 					}
@@ -2500,13 +2558,18 @@ const Engel = (() =>
 								this.jump(ifFalse);
 								this.emit(op.POP);
 								this.visit(node.other);
+								this.emit(op.JMP);
+								const skipPop = this.saveSpot();
+								this.emit(...this.uInt(0));
 								this.jump(ifTrue);
+								this.emit(op.POP);
+								this.jump(skipPop);
 							}
 							else
 							{
 								this.jump(ifFalse);
-								this.emit(op.POP);
 								this.jump(ifTrue);
+								this.emit(op.POP);
 							}
 							break;
 						}
@@ -2533,6 +2596,7 @@ const Engel = (() =>
 							if (hasElse)
 							{
 								this.jump(ifTrue);
+								this.emit(op.POP);
 							}
 							const loop = this.beginLoop();
 							this.visit(node.then);
@@ -2667,6 +2731,7 @@ const Engel = (() =>
 								}
 								this.jump(noMatch);
 							}
+							this.emit(op.POP);
 							if (node.other !== null)
 							{
 								this.visit(node.other);
@@ -3379,7 +3444,7 @@ const Engel = (() =>
 					{
 						if (a.type !== b.type)
 						{
-							return isNum(a) && isNum(b);
+							return this.isNum(a) && this.isNum(b);
 						}
 						return true;
 					}
@@ -3441,8 +3506,8 @@ const Engel = (() =>
 							if (!(key.value in value.value))
 							{
 								this.error({
-									'en': `No key '${this.toStr(key)}' in map.`,
-									});
+									'en': `No key '${this.toStr(key)}' in hashmap.`,
+								});
 								break;
 							}
 							result = value.value[key.value];
@@ -4507,7 +4572,7 @@ const run = () =>
 {
 	const editor = document.querySelector('#editor code');
 	const code = editor.textContent;
-	Engel.run(Engel.compile(code, 'en'), 'en');
+	Engel.run(dis(Engel.compile(code, 'en')), 'en');
 };
 // Yes, I did get desperate enough to add a dissassembler:
 const dis = (prog, indent = 0) =>
