@@ -428,7 +428,7 @@ const Engel = (() =>
 		'I_BAND',    'I_SUB',         'I_MUL',
 		'I_DIV',     'I_EXP',         'I_MOD',
 		'I_LS',      'I_RS',          'POS',
-		'INC',       'DEC',           'COALESC',
+		'INC',       'DEC',           'COAL',
 		'COMP_OBJ',  'RETURN');
 	
 	const compile = (() =>
@@ -457,7 +457,8 @@ const Engel = (() =>
 			'FUNC',      'HASH_START', 'OBJ_START',
 			'FAT_ARROW', 'IMPORT',     'ERROR',
 			'DOT',       'QUESTION',   'IN',
-			'NULL',      'SPREAD',     'FIN');
+			'NULL',      'SPREAD',     'COAL',
+			'FIN');
 		const Token = (type, lexer, value = null) => ({
 		   type,
 		   line: lexer.line,
@@ -952,6 +953,10 @@ const Engel = (() =>
 							}
 							return Token(TokenType.DOT, this);
 						case '?':
+							if (this.match('!'))
+							{
+								return Token(TokenType.COAL, this);
+							}
 							return Token(TokenType.QUESTION, this);
 						case '{':
 							if (this.interps.length > 0)
@@ -1036,7 +1041,7 @@ const Engel = (() =>
 			'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
 			'OBJ',        'EXPR',          'FUNC_CALL',
 			'ARRAY',      'IMPORT',        'GET_PROP',
-			'SET_PROP',   'FIN');
+			'SET_PROP',   'COAL',          'FIN');
 		const Node = (() =>
 		{
 			const base = (type, line = 0) => ({
@@ -1880,9 +1885,19 @@ const Engel = (() =>
 					}
 					return result;
 				},
+				coal()
+				{
+					let result = this.or();
+					while (this.taste(TokenType.COAL))
+					{
+						this.skipBreaks();
+						result = Node.Binary(NodeType.COAL, result, this.or())
+					}
+					return result;
+				},
 				ifelse()
 				{
-					const result = this.or();
+					const result = this.coal();
 					if (this.taste(TokenType.IF))
 					{
 						this.skipBreaks();
@@ -2696,6 +2711,16 @@ const Engel = (() =>
 							this.emit(...this.uInt());
 							this.visit(node.right);
 							this.jump(jump);
+							break;
+						}
+						case NodeType.COAL:
+						{
+							this.visit(node.left);
+							this.emit(op.COAL);
+							const notNull = this.saveSpot();
+							this.emit(...this.uInt(0));
+							this.visit(node.right);
+							this.jump(notNull);
 							break;
 						}
 						case NodeType.MATCH:
@@ -4421,6 +4446,19 @@ const Engel = (() =>
 									this.frame.ip += jump;
 								}
 								else
+								{
+									this.pop();
+								}
+								break;
+							}
+							case op.COAL:
+							{
+								const jump = this.uInt();
+								if (this.peek().type !== ValueType.NULL)
+								{
+									this.frame.ip += jump;
+								}
+								else 
 								{
 									this.pop();
 								}

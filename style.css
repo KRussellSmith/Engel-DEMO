@@ -12,8 +12,9 @@ body
 	background-color: #2A2C41 !important;
 	color:            #E5E6FA !important;
 	width:            100vw   !important;
-	height:           75vh    !important;
+	height:           100vh    !important;
 	overflow:         scroll  !important;
+	line-height: 12px !important;
 }
 #editor code
 {
@@ -37,7 +38,7 @@ body
 }
 #terminal code
 {
-	font-size:   14px !important;
+	font-size:   12px !important;
 	tab-size:    3 !important;
 }
 #in

@@ -130,7 +130,7 @@ export const highlight = (editor, lang = 'en') =>
 					// Interpolation:
 					case '#':
 					{
-						if (this.look('{'))
+						if (this.spy('{'))
 						{
 							this.interps.push(1);
 							done = true;
@@ -181,7 +181,7 @@ export const highlight = (editor, lang = 'en') =>
 			let color  = NORM;
 			if (skip > 0)
 			{
-				while (skip-- > 0)
+				while (--skip > 0)
 				{
 					if (this.fin())
 					{
