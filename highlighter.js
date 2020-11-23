@@ -146,7 +146,7 @@ export const highlight = (editor, lang = 'en') =>
 		},
 		doubleString()
 		{
-			let string = '';
+			let string = ''; 
 			let done = false;
 			do
 			{

@@ -52,8 +52,8 @@ io.print('end!')</code></pre>
 	<pre id='terminal'><code></code></pre>
 	<input id='in'></input>
 	<svg id='run' viewBox='0 0 100 100'>
-		<circle onclick='run()' stroke='#00FF7F' stroke-width='6%' cx='50%' cy='50%' r='47%'/>
-		<path fill='#00FF7F' onclick='run()' d='
+		<circle onclick='run("en")' stroke='#00FF7F' stroke-width='6%' cx='50%' cy='50%' r='47%'/>
+		<path fill='#00FF7F' onclick='run("en")' d='
 			M 35 30
 			L 70 50
 			L 35 70
@@ -71,7 +71,7 @@ io.print('end!')</code></pre>
 		{
 			const editor = document.querySelector('#editor code');
 			const caret = new Caret(editor);
-			highlight(editor);
+			highlight(editor, 'en');
 			(() =>
 			{
 				let debounce;
@@ -80,7 +80,7 @@ io.print('end!')</code></pre>
 					clearTimeout(debounce);
 					debounce = setTimeout(() =>
 					{
-						highlight(editor);
+						highlight(editor, 'en');
 					}, 100);
 					e.preventDefault();
 				});

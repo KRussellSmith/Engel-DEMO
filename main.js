@@ -25,7 +25,7 @@ const Engel = (() =>
 	   'INT', 'REAL', 'STRING',
 	   'FUNC', 'NULL', 'BOOL',
 	   'HASH', 'ARRAY', 'OBJ',
-	   'METHOD');
+	   'METHOD', 'ITERATOR');
 	const Value = (type, value = null) => ({
 	   type,
 	   value,
@@ -286,6 +286,134 @@ const Engel = (() =>
 						}
 						return result;
 					})),
+				Native(
+					{
+						'en': 'push',
+						'es': 'empuje',
+						'fr': 'appuyez',
+						'de': 'drücken',
+					},
+					Value(ValueType.NATIVE, (vm, args) =>
+					{
+						if (args < 2)
+						{
+							return NULL;
+						}
+						const result = Value(ValueType.INT, 0);
+						const arg = vm.stack[vm.top - args];
+						const val = vm.stack[vm.top - args + 1];
+						if (arg.type !== ValueType.ARRAY)
+						{
+							return NULL;
+						}
+						arg.value.push(val)
+						return arg;
+					})),
+				Native(
+					{
+						'en': 'pop',
+						'es': 'dispara',
+						'fr': 'eclátez',
+						'de': 'abfeuern',
+					},
+					Value(ValueType.NATIVE, (vm, args) =>
+					{
+						if (args === 0)
+						{
+							return NULL;
+						}
+						const result = Value(ValueType.INT, 0);
+						const arg = vm.stack[vm.top - args];
+						if (arg.type !== ARRAY)
+						{
+							return NULL;
+						}
+						if (args >= 2)
+						{
+							const index = arg[vm.top - args + 1];
+							if (index.type === ValueType.INT)
+							{
+								if (val >= 0 && val < arg.value.length)
+								{
+									const val = arg.value[index.value];
+									arg.value.splice(index, 1);
+									return val;
+								}
+								else
+								{
+									return NULL;
+								}
+							}
+							else
+							{
+								return NULL;
+							}
+						}
+						arg.value.push(val)
+						return arg;
+					})),
+			],
+			'text': [
+				Native(
+					{
+						'en': 'uppercase',
+						'es': 'mayúsculas',
+						'fr': 'majuscules',
+						'de': 'großbuchstaben',
+					},
+					Value(ValueType.NATIVE, (vm, args) =>
+					{
+						if (args === 0)
+						{
+							return NULL;
+						}
+						const arg = vm.stack[vm.top - args];
+						if (arg.type !== ValueType.STRING)
+						{
+							return NULL;
+						}
+						return Value(ValueType.STRING, arg.value.toUpperCase());
+					})),
+				Native(
+					{
+						'en': 'lowercase',
+						'es': 'minúsculas',
+						'fr': 'minuscules',
+						'de': 'kleinbuchstaben',
+					},
+					Value(ValueType.NATIVE, (vm, args) =>
+					{
+						if (args === 0)
+						{
+							return NULL;
+						}
+						const arg = vm.stack[vm.top - args];
+						if (arg.type !== ValueType.STRING)
+						{
+							return NULL;
+						}
+						return Value(ValueType.STRING, arg.value.toLowerCase());
+					})),
+				Native(
+					{
+						'en': 'letter',
+						'es': 'letra',
+						'fr': 'lettre',
+						'de': 'buchstabe',
+					},
+					Value(ValueType.NATIVE, (vm, args) =>
+					{
+						if (args === 0)
+						{
+							return NULL;
+						}
+						const arg = vm.stack[vm.top - args];
+						if (arg.type !== ValueType.STRING)
+						{
+							return NULL;
+						}
+						return Value(ValueType.BOOL, RegExp(/^\p{L}/, 'u').test(arg.value));
+					})),
 			],
 			'krono': [
 				Native({
@@ -429,7 +557,8 @@ const Engel = (() =>
 		'I_DIV',     'I_EXP',         'I_MOD',
 		'I_LS',      'I_RS',          'POS',
 		'INC',       'DEC',           'COAL',
-		'COMP_OBJ',  'RETURN');
+		'COMP_OBJ',  'FOR',           'ITERATOR',
+		'RETURN');
 	
 	const compile = (() =>
 	{
@@ -1367,7 +1496,17 @@ const Engel = (() =>
 					}
 					else if (this.taste(TokenType.ID))
 					{
-						result = Node.Get(this.prev);
+						const id = Node.Get(this.prev);
+						if (this.taste(TokenType.FUNC))
+						{
+							this.skipBreaks();
+							const body = this.funcBody();
+							result = Node.Func([id], null, body, this.prev.line);
+						}
+						else
+						{
+							result = id;
+						}
 					}
 					else if (this.taste(TokenType.CALL))
 					{
@@ -2070,6 +2209,31 @@ const Engel = (() =>
 						}
 						return Node.Match(comp, cases, other, start.line);
 					}
+					else if (this.taste(TokenType.FOR))
+					{
+						let mutable = false;
+						if (this.taste(TokenType.LET))
+						{
+							mutable = true;
+						}
+						else 
+						{
+							this.eat(TokenType.DEC, {
+								'en': 'Expected loop declaration.',
+							});
+						}
+						this.eat(TokenType.ID, {
+							'en': 'Expected identifier.',
+						});
+						const name = this.prev.value;
+						this.eat(TokenType.IN, {
+							'en': 'Expected \'in\'',
+						});
+						const expr = this.expression();
+						this.skipBreaks();
+						const body = this.block();
+						return Node.For(name, mutable, expr, body, this.prev.line);
+					}
 					else if (this.taste(TokenType.CONTINUE))
 					{
 						return Node.Nilary(NodeType.CONTINUE, this.prev.line)
@@ -2203,11 +2367,13 @@ const Engel = (() =>
 				loop:     null,
 				daddy,
 			});
-			const Loop = (scope) =>
+			const Loop = (scope, start) =>
 			{
 				const result = {
 					continues: [],
 					breaks:    [],
+					start,
+					depth:     scope.depth,
 					depth: scope.depth,
 					daddy: scope.loop,
 				};
@@ -2459,9 +2625,9 @@ const Engel = (() =>
 				{
 					this.writeInt(spot, to);
 				},
-				beginLoop()
+				beginLoop(start)
 				{
-					return Loop(this.curr);
+					return Loop(this.curr, start);
 				},
 				endLoop()
 				{
@@ -2577,14 +2743,15 @@ const Engel = (() =>
 								const skipPop = this.saveSpot();
 								this.emit(...this.uInt(0));
 								this.jump(ifTrue);
-								this.emit(op.POP);
+								//this.emit(op.POP);|
 								this.jump(skipPop);
 							}
 							else
 							{
 								this.jump(ifFalse);
-								this.jump(ifTrue);
 								this.emit(op.POP);
+								this.jump(ifTrue);
+								//this.emit(op.POP);
 							}
 							break;
 						}
@@ -2613,7 +2780,7 @@ const Engel = (() =>
 								this.jump(ifTrue);
 								this.emit(op.POP);
 							}
-							const loop = this.beginLoop();
+							const loop = this.beginLoop(start);
 							this.visit(node.then);
 							this.endLoop();
 							this.emit(op.GOTO);
@@ -2641,16 +2808,69 @@ const Engel = (() =>
 							}
 							else
 							{
-								for (const jump of loop.continues)
-								{
-									this.goTo(jump, start);
-								}
 								for (const brk of loop.breaks)
 								{
 									this.goTo(brk, this.saveSpot());
 								}
 								this.jump(mainBreak);
 								this.emit(op.POP);
+							}
+							this.endScope();
+							break;
+						}
+						case NodeType.FOR:
+						{
+							const _ITERATOR  = ' iterator'
+							const _ITERATION = ' iteration';
+							this.beginScope();
+							{
+								this.visit(node.value);
+								this.emit(op.ITERATOR);
+								this.addLocal(_ITERATOR, true);
+								this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+								this.beginScope();
+								{
+									const start = this.saveSpot();
+									this.emit(
+										op.GET_LOCAL,
+										...this.uLEB(this.findLocal(_ITERATOR)));
+									this.emit(op.FOR);
+									const mainBreak = this.saveSpot();
+									this.emit(...this.uInt(0));
+									this.addLocal(_ITERATION, false);
+									this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+									/*this.emit(
+										op.SET_LOCAL,
+										...this.uLEB(this.findLocal(_ITERATION)));*/
+									let breaks;
+									this.beginScope();
+									{
+										const loop = this.beginLoop(start);
+										this.emit(
+											op.GET_LOCAL,
+											...this.uLEB(this.findLocal(_ITERATION)))
+										this.addLocal(node.local, node.mutable);
+										this.curr.locals[this.curr.locals.length - 1].depth = this.curr.depth;
+										/*this.emit(
+											op.SET_LOCAL,
+											...this.uLEB(this.findLocal(node.local)));*/
+										this.visit(node.body);
+										this.endLoop();
+										breaks = loop.breaks;
+									}
+									this.endScope();
+									this.emit(op.POP);
+									this.emit(
+										op.GOTO,
+										...this.uInt(start));
+									for (const brk of breaks)
+									{
+										this.goTo(brk, this.saveSpot())
+									}
+									this.goTo(mainBreak, this.saveSpot())
+									//this.emit(op.POP);
+								}
+								this.endScope();
 							}
 							this.endScope();
 							break;
@@ -2664,9 +2884,15 @@ const Engel = (() =>
 								})
 								break;
 							}
+							let i = this.curr.locals.length - 1;
+							while (i >= 0 && this.curr.locals[i].depth > this.curr.loop.depth)
+							{
+								this.emit(op.POP);
+								--i;
+							}
 							this.emit(op.GOTO);
 							this.curr.loop.continues.push(this.saveSpot());
-							this.emit(...this.uInt());
+							this.emit(...this.uInt(this.curr.loop.start));
 							break;
 						}
 						case NodeType.BREAK:
@@ -2678,9 +2904,16 @@ const Engel = (() =>
 							   })
 							   break;
 							}
+							
+							let i = this.curr.locals.length - 1;
+							while (i >= 0 && this.curr.locals[i].depth > this.curr.loop.depth)
+							{
+								this.emit(this.curr.locals[i].captured ? op.CLOSE : op.POP);
+								--i;
+							}
 							this.emit(op.GOTO);
 							this.curr.loop.breaks.push(this.saveSpot());
-							this.emit(...this.uInt());
+							this.emit(...this.uInt(0));
 							break;
 						}
 						case NodeType.AND:
@@ -3224,7 +3457,7 @@ const Engel = (() =>
 			({
 				func,
 				upvalues,
-			})
+			});
 			const Method = (closure, obj = null) =>
 			({
 				obj, closure,
@@ -3233,6 +3466,35 @@ const Engel = (() =>
 			({
 				fields, methods,
 			});
+			const _Iterator = (value) =>
+			{
+				switch (value.type)
+				{
+					case ValueType.ARRAY:
+					{
+						return Value(
+							ValueType.ITERATOR,
+							{
+								value,
+								next: (() =>
+								{
+									let i = 0;
+									return () =>
+									{
+										//alert(i);
+										//alert(JSON.stringify(value));
+										if (i < value.value.length)
+										{
+											return value.value[i++];
+										}
+										return null;
+									};
+								})(),
+							});
+					}
+				}
+				return null;
+			};
 			const putOrPush = (array = [], index = 0, value = null) =>
 			{
 				if (index >= array.length)
@@ -4464,6 +4726,46 @@ const Engel = (() =>
 								}
 								break;
 							}
+							case op.ITERATOR:
+							{
+								const value = this.peek(0);
+								const iterator = _Iterator(value);
+								//alert(JSON.stringify(this.stack))
+								if (iterator === null)
+								{
+									this.error({
+										'en': `Cannot iterate value of type ${this.typeName(val)}.`,
+									});
+									break;
+								}
+								this.put(0, iterator);
+								break;
+							}
+							case op.FOR:
+							{
+								const val = this.peek(0);
+								const jump = this.uInt();
+								if (val.type !== ValueType.ITERATOR)
+								{
+									this.error({
+										'en': `Cannot iterate value of type ${this.typeName(val)}.`,
+									});
+									this.frame.ip = jump;
+									break;
+								}
+								//alert(JSON.stringify(val));
+								const next = val.value.next();
+								//alert(JSON.stringify(next));
+								if (next !== null)
+								{
+									this.put(0, next);
+								}
+								else 
+								{
+									this.frame.ip = jump;
+								}
+								break;
+							}
 							case op.DUMP:
 							{
 								alert(JSON.stringify(this.stack));
@@ -4606,11 +4908,11 @@ const Engel = (() =>
 	}
 	10 + 20 ^ 5 if 5 < 10 else 5 ~ ~2`;*/
 
-const run = () =>
+const run = (lang) =>
 {
 	const editor = document.querySelector('#editor code');
 	const code = editor.textContent;
-	Engel.run(dis(Engel.compile(code, 'en')), 'en');
+	Engel.run(Engel.compile(code, lang), lang);
 };
 // Yes, I did get desperate enough to add a dissassembler:
 const dis = (prog, indent = 0) =>
@@ -4679,11 +4981,13 @@ const dis = (prog, indent = 0) =>
 			case op.GOTO:
 			case op.JMP_IF_NULL:
 			case op.JMP:
+			case op.FOR:
 				result += ' ' + uInt();
 				break;
 			case op.CALL:
 				result += '(' + uLEB() + ')';
 				break;
+			
 			case op.CLOSURE:
 			{
 				const index = uLEB();
