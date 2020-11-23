@@ -2357,7 +2357,7 @@ const Engel = (() =>
 			const Upvalue = (index = 0, isLocal = true) => ({
 				index, isLocal,
 			})
-			const CompilerScope = (daddy = null) =>
+			const CompilerScope = (parent = null) =>
 			({
 				func:     Func(),
 				locals:   [],
@@ -2365,7 +2365,7 @@ const Engel = (() =>
 				upvalues: [],
 				error:    null,
 				loop:     null,
-				daddy,
+				parent,
 			});
 			const Loop = (scope, start) =>
 			{
@@ -2375,7 +2375,7 @@ const Engel = (() =>
 					start,
 					depth:     scope.depth,
 					depth: scope.depth,
-					daddy: scope.loop,
+					parent: scope.loop,
 				};
 				return scope.loop = result;
 			};
@@ -2530,12 +2530,12 @@ const Engel = (() =>
 					this.emit(op.NULL)
 					this.emit(op.RETURN);
 					const { func } = this.curr;
-					if (this.curr.daddy !== null)
+					if (this.curr.parent !== null)
 					{
-						this.curr.daddy.error = this.curr.error;
+						this.curr.parent.error = this.curr.error;
 					}
 					func.upvalues = this.curr.upvalues.length;
-					this.curr = this.curr.daddy;
+					this.curr = this.curr.parent;
 					return func;
 				},
 				emitClosure(x)
@@ -2577,20 +2577,20 @@ const Engel = (() =>
 				},
 				findUpvalue(name, scope)
 				{
-					if (scope.daddy === null)
+					if (scope.parent === null)
 					{
 						return -1;
 					}
-					const local = this.findLocal(name, scope.daddy);
+					const local = this.findLocal(name, scope.parent);
 					if (local !== -1)
 					{
-						scope.daddy.locals[local].captured = true;
+						scope.parent.locals[local].captured = true;
 						return this.addUpvalue(scope, local, true);
 					}
-					const upvalue = this.findUpvalue(name, scope.daddy);
+					const upvalue = this.findUpvalue(name, scope.parent);
 					if (upvalue !== -1)
 					{
-						const isConst = scope.daddy.upvalues[upvalue].isConst;
+						const isConst = scope.parent.upvalues[upvalue].isConst;
 						return this.addUpvalue(scope, upvalue, false);
 					}
 					return -1;
@@ -2631,7 +2631,7 @@ const Engel = (() =>
 				},
 				endLoop()
 				{
-					return this.curr.loop = this.curr.loop.daddy;
+					return this.curr.loop = this.curr.loop.parent;
 				},
 				globals: [],
 				visit(node)
@@ -2842,10 +2842,9 @@ const Engel = (() =>
 									/*this.emit(
 										op.SET_LOCAL,
 										...this.uLEB(this.findLocal(_ITERATION)));*/
-									let breaks;
+									const loop = this.beginLoop();
 									this.beginScope();
 									{
-										const loop = this.beginLoop(start);
 										this.emit(
 											op.GET_LOCAL,
 											...this.uLEB(this.findLocal(_ITERATION)))
@@ -2855,15 +2854,14 @@ const Engel = (() =>
 											op.SET_LOCAL,
 											...this.uLEB(this.findLocal(node.local)));*/
 										this.visit(node.body);
-										this.endLoop();
-										breaks = loop.breaks;
 									}
 									this.endScope();
+									this.endLoop();
 									this.emit(op.POP);
 									this.emit(
 										op.GOTO,
 										...this.uInt(start));
-									for (const brk of breaks)
+									for (const brk of loop.breaks)
 									{
 										this.goTo(brk, this.saveSpot())
 									}
