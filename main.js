@@ -84,11 +84,11 @@ const Engel = (() =>
 						{
 							return NULL;
 						}
-						return Value(ValueType.FLOAT, toInt)
+						return Value(ValueType.REAL, toFloat)
 					}
 					case ValueType.BOOL:
 					{
-						return Value(ValueType.FLOAT, val.value ? 1 : 0);
+						return Value(ValueType.REAL, val.value ? 1 : 0);
 					}
 				}
 				return NULL;
@@ -109,7 +109,7 @@ const Engel = (() =>
 					return NULL;
 				}
 				const val = vm.stack[vm.top - args];
-				return Value(ValueType.BOOLEAN, vm.isTrue(val));
+				return Value(ValueType.BOOL, vm.isTrue(val));
 			}),
 			'function': Value(ValueType.NATIVE, (() =>
 			{
@@ -196,8 +196,8 @@ const Engel = (() =>
 					{
 						'en': 'array',
 						'es': 'vector',
-						'fr': 'vector',
-						'fr': 'vektor',
+						'fr': 'vecteur',
+						'de': 'vektor',
 					},
 					casters['array']),
 			],
@@ -273,12 +273,7 @@ const Engel = (() =>
 								break;
 							case ValueType.HASHMAP:
 							{
-								const entries = arg.value.entries()
-								for (const [key, value] of entries)
-								{
-									let type = ValueType.NULL;
-									
-								}
+								result.value = Object.keys(arg.value).length;
 								break;
 							}
 							default:
@@ -324,7 +319,7 @@ const Engel = (() =>
 						}
 						const result = Value(ValueType.INT, 0);
 						const arg = vm.stack[vm.top - args];
-						if (arg.type !== ARRAY)
+						if (arg.type !== ValueType.ARRAY)
 						{
 							return NULL;
 						}
@@ -349,8 +344,7 @@ const Engel = (() =>
 								return NULL;
 							}
 						}
-						arg.value.push(val)
-						return arg;
+						return arg.value.pop();
 					})),
 			],
 			'text': [
@@ -476,7 +470,7 @@ const Engel = (() =>
 						return NULL;
 					}
 					const x = vm.peek(1);
-					if (!vm.isNum(x) || !vm.isNum(y))
+					if (!vm.isNum(x))
 					{
 						return NULL;
 					}
