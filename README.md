@@ -32,7 +32,7 @@ dec PI = 3.14
 ```
 **First class functions (and closures)**  
 ```
-io.print((() -> PI * x)()
+io.print((() -> PI * x)())
 ```  
 **Classless objects**
 ```
