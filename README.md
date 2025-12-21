@@ -73,17 +73,17 @@ io.print('hi') ; a print call
 
 .`
 ```
----
-## Runtime Notes
 
+## Runtime Notes
 The interpreter runs as a non-blocking main loop that cooperatively yields while interacting with the DOM.  
 Standard setTimeout scheduling proved too coarse (approximately 17ms resolution), so a finer-grained scheduling approach was used to maintain responsiveness during execution.  
+
 ---
 ## Credits  
-**Caret.js** — Used in editor
+**Caret.js** — Used in editor  
 *MIT License*  
 https://github.com/ichord/Caret.js/  
 
-**Soon** — lightweight scheduling tool allowing finer execution than setTimeout
-*MIT License*
+**Soon** — lightweight scheduling tool allowing finer execution than setTimeout  
+*MIT License*  
 https://github.com/bluejava/zousan
