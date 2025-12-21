@@ -24,7 +24,7 @@ Engel supports a compact but expressive feature set, including:
 **Imports**  
 ```
 import io
-```  
+```
 **Variables and constants**
 ```
 let x = 100
@@ -33,8 +33,8 @@ dec PI = 3.14
 **First class functions (and closures)**  
 ```
 io.print((() -> PI * x)())
-```  
-**Classless objects**
+```
+**Classless objects**  
 ```
 #{
   x = 10
@@ -42,7 +42,7 @@ io.print((() -> PI * x)())
   mag() -> (this.x ^ 2 + this.y ^ 2) ^ 0.5
 }
 ```
-**Operator overloading**
+**Operator overloading**  
 ```
 dec Vector2d = (x, y) -> #{
 	x = x
@@ -56,36 +56,34 @@ io.print(c.x, c.y)
 ```
 **String interpolation**  
 ```
-'9 + 10 = #{9 + 10}'
-```  
-**Built-in Data types**
+io.print('9 + 10 = #{9 + 10}')
+```
+**Built-in Data types**  
 - arrays `[ 'Monday', 'Tuesday', 'Wednesday' ]`
 - hashmaps `#[ 'hello': 'world', 7: 'Sunday' ]`  
-
-**Singleline comments**
+**Strong dynamic typing**  
+**Singleline comments**  
 ```
 io.print('hi') ; a print call
 ```
-**Multiline comments**
+**Multiline comments**  
 ```
 ` use backtics
-` they can nest! .`
+` they can nest! .
 
 .`
 ```
-
-
-
+---
 ## Runtime Notes
 
 The interpreter runs as a non-blocking main loop that cooperatively yields while interacting with the DOM.  
-Standard `setTimeout` scheduling proved too coarse (approximately 17ms resolution), so a finer-grained scheduling approach was used to maintain responsiveness during execution.  
-
+Standard setTimeout scheduling proved too coarse (approximately 17ms resolution), so a finer-grained scheduling approach was used to maintain responsiveness during execution.  
+---
 ## Credits  
-**Caret.js** — browser-based code editor  
+**Caret.js** — Used in editor
 *MIT License*  
 https://github.com/ichord/Caret.js/  
 
-**Soon** — lightweight scheduling utility used to support fine-grained cooperative execution
+**Soon** — lightweight scheduling tool allowing finer execution than setTimeout
 *MIT License*
 https://github.com/bluejava/zousan
